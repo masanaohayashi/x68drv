@@ -1,9 +1,14 @@
 import Foundation
 
-/// Big-endian FAT16 chain walker (Human68k HDD volumes).
+/// Big-endian FAT16 chain walker / mutator (Human68k HDD volumes).
 public struct FAT16BE: Sendable {
-    public let table: Data
+    public private(set) var table: Data
     public let maxClusters: Int
+
+    /// End-of-chain marker (0xFFFF).
+    public static let endOfChain = 0xFFFF
+    /// Free cluster value.
+    public static let free = 0
 
     public init(table: Data, maxClusters: Int) {
         self.table = table
@@ -28,6 +33,54 @@ public struct FAT16BE: Sendable {
             throw X68Error.filesystem("FAT16 table truncated")
         }
         return Int(try Endian.readUInt16LE(table, at: index))
+    }
+
+    public mutating func setEntry(cluster: Int, value: Int) throws {
+        guard cluster >= 0, cluster <= maxClusters else {
+            throw X68Error.filesystem("FAT16 cluster out of range: \(cluster)")
+        }
+        let index = cluster * 2
+        guard index + 1 < table.count else {
+            throw X68Error.filesystem("FAT16 table truncated at cluster \(cluster)")
+        }
+        try Endian.writeUInt16BE(UInt16(value & 0xFFFF), to: &table, at: index)
+    }
+
+    /// Free cluster numbers in [2...maxClusters] that currently hold 0.
+    public func freeClusters(limit: Int) throws -> [Int] {
+        var result: [Int] = []
+        guard limit > 0 else { return result }
+        for c in 2...maxClusters {
+            if try entry(cluster: c) == Self.free {
+                result.append(c)
+                if result.count >= limit { break }
+            }
+        }
+        return result
+    }
+
+    /// Allocate a chain of `count` free clusters; last entry = EOF.
+    /// Returns the list of clusters (length `count`).
+    public mutating func allocateChain(count: Int) throws -> [Int] {
+        guard count > 0 else {
+            throw X68Error.filesystem("allocateChain requires count > 0")
+        }
+        let free = try freeClusters(limit: count)
+        guard free.count == count else {
+            throw X68Error.limit("Disk full: need \(count) free clusters, have \(free.count)")
+        }
+        for i in 0..<count {
+            let next = (i + 1 < count) ? free[i + 1] : Self.endOfChain
+            try setEntry(cluster: free[i], value: next)
+        }
+        return free
+    }
+
+    /// Mark every cluster in `chain` as free (0).
+    public mutating func freeChain(_ chain: [Int]) throws {
+        for c in chain {
+            try setEntry(cluster: c, value: Self.free)
+        }
     }
 
     public func chain(from start: Int, maxLength: Int = 65536) throws -> [Int] {

@@ -57,6 +57,44 @@ public struct DirEntry: Equatable, Sendable {
         )
     }
 
+    /// Pack a 32-byte Human68k/MS-DOS-compatible directory entry.
+    ///
+    /// Layout (DiFinder `directory_hu68k_t` / synthetic HDS):
+    /// name[8] + ext[3] + attr + name2[10] + wtime(LE) + wdate(LE) + cluster(LE) + size(LE).
+    public static func pack(
+        name: HumanFileName,
+        attributes: UInt8 = 0x20,
+        firstCluster: UInt16,
+        size: UInt32,
+        wtime: UInt16 = 0,
+        wdate: UInt16 = 0
+    ) throws -> Data {
+        let stemSJIS = try EncodingCP932.encode(name.stem)
+        let (dos8, rest) = try HumanNamePacking.splitStemSJIS(stemSJIS)
+        let (_, ext3) = try name.packDiskFields()
+        var name2 = rest
+        while name2.count < 10 { name2.append(0x20) }
+        if name2.count > 10 { name2 = name2.prefix(10) }
+
+        var out = Data(count: Self.size)
+        for i in 0..<8 { out[i] = dos8[i] }
+        for i in 0..<3 { out[8 + i] = ext3[i] }
+        out[11] = attributes
+        for i in 0..<10 { out[12 + i] = name2[i] }
+        try Endian.writeUInt16LE(wtime, to: &out, at: 22)
+        try Endian.writeUInt16LE(wdate, to: &out, at: 24)
+        try Endian.writeUInt16LE(firstCluster, to: &out, at: 26)
+        try Endian.writeUInt32LE(size, to: &out, at: 28)
+        return out
+    }
+
+    /// Mark slot deleted (first byte 0xE5); preserves rest of the 32 bytes.
+    public static func markDeleted(_ entry: Data) -> Data {
+        var d = entry
+        if d.count >= 1 { d[0] = 0xE5 }
+        return d
+    }
+
     private static func stripPad(_ data: Data) -> Data {
         var end = data.count
         while end > 0, data[end - 1] == 0x20 { end -= 1 }

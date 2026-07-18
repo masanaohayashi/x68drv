@@ -25,7 +25,8 @@ Phase 6  FUSE RO + Mode C + 取り出す  ★製品の核
 Phase 7  HDF 検証クラス + ローカル disk/ 回帰
 Phase 8  0.1 受け入れ（PRD-8）+ 配布メモ
 
-（バックログ）書込 / Sparkle / 追加フォーマット
+（バックログ）書込 Stage B+ / Sparkle / 追加フォーマット  
+（実装済・実験）**書込 Stage A**: `HddInject` + `x68drv-tool inject --write`（HDS/HDF ルートのみ。製品 FUSE 書込ではない。詳細は `docs/reference-difinder-write-path.md`）
 ```
 
 ### 依存関係（簡略）

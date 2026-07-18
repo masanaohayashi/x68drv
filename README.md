@@ -25,9 +25,12 @@ open x68drv.xcodeproj
 # Unit tests (X68Core)
 swift test
 
-# Dev CLI (list / export / fsck / detect)
+# Dev CLI (list / export / fsck / detect / experimental inject)
 swift run x68drv-tool list path/to/disk.xdf
 swift run x68drv-tool fsck path/to/disk.hds
+# Stage A experimental: root inject into HDS/HDF (copy the image first!)
+swift run x68drv-tool inject --write disk.hds ./local.bin HELLO.BIN
+swift run x68drv-tool inject --write --overwrite disk.hds ./local.bin HELLO.BIN
 
 # App
 xcodebuild -project x68drv.xcodeproj -scheme x68drv -configuration Debug -destination 'platform=macOS' build
