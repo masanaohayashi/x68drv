@@ -35,6 +35,7 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 | [`README.md`](README.md) | ドキュメント索引 |
 | [`format-entry-points.md`](format-entry-points.md) | XM6/MPX68K の形式別 **入口関数**（移植禁止） |
 | [`disk-samples-verification.md`](disk-samples-verification.md) | 手元 `disk/` の **サイズ・マジック・BPB 実測** |
+| [`implementation-plan.md`](implementation-plan.md) | **実装フェーズ & タスクリスト**（テスト込み） |
 
 ---
 

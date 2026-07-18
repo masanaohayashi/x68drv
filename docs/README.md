@@ -5,6 +5,7 @@
 | 文書 | 内容 |
 |------|------|
 | [design.md](design.md) | 製品設計（**Product Requirements** / Finder マウント、Goals、PR 計画、Key Decisions） |
+| [implementation-plan.md](implementation-plan.md) | **実装フェーズ計画 & タスクリスト**（テスト ID 付き） |
 | [format-entry-points.md](format-entry-points.md) | XM6 / MPX68K における **HDF・HDS・XDF の入口関数マップ**（移植禁止・仕様抽出のみ） |
 | [disk-samples-verification.md](disk-samples-verification.md) | 手元 `disk/` サンプルの **実測突合結果**（サイズ・マジック・パーティション・BPB） |
 
