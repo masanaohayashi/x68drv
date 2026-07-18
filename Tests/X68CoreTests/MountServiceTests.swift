@@ -70,8 +70,8 @@ final class MountServiceTests: XCTestCase {
         XCTAssertTrue(service.mounts.isEmpty)
     }
 
-    /// Experimental write is HDS/HDF-only and must not silently snapshot.
-    func testExperimentalWriteRejectsFloppy() throws {
+    /// Experimental write on XDF still mounts read-only (write is HDS/HDF only).
+    func testExperimentalWriteFallsBackROForFloppy() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("x68-ew-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
@@ -82,17 +82,20 @@ final class MountServiceTests: XCTestCase {
         try image.write(to: imageURL)
 
         let service = MountService(mountsRoot: tmp.appendingPathComponent("M"))
-        XCTAssertThrowsError(
-            try service.mount(url: imageURL, preferFuse: true, experimentalWrite: true)
-        ) { error in
-            let msg = (error as? X68Error).map(\.localizedDescription) ?? "\(error)"
-            XCTAssertTrue(
-                msg.lowercased().contains("hds") || msg.lowercased().contains("hdf")
-                    || msg.lowercased().contains("write"),
-                "unexpected error: \(msg)"
-            )
-        }
-        XCTAssertTrue(service.mounts.isEmpty)
+        // preferFuse: false → snapshot path (no FUSE dependency in CI)
+        let record = try service.mount(url: imageURL, preferFuse: false, experimentalWrite: true)
+        XCTAssertFalse(record.experimentalWrite)
+        XCTAssertEqual(record.backend, .snapshot)
+        try service.eject(id: record.id)
+    }
+
+    func testX68ErrorLocalizedDescription() {
+        let err: Error = X68Error.unsupported("Experimental write supports HDS/HDF only")
+        XCTAssertEqual(
+            (err as? LocalizedError)?.errorDescription,
+            "Experimental write supports HDS/HDF only"
+        )
+        XCTAssertFalse(err.localizedDescription.contains("error 2"))
     }
 
     func testMaxMounts() throws {

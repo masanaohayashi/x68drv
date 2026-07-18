@@ -148,6 +148,9 @@ final class AppModel: ObservableObject {
             case (.fuse, true):
                 lastDocumentMessage =
                     "Mounted \(record.displayName) writable (experimental) — image is modified; backup .x68drv-bak"
+            case (.fuse, false) where experimentalWriteMount:
+                lastDocumentMessage =
+                    "Mounted \(record.displayName) read-only (write mount is HDS/HDF only)"
             case (.fuse, false):
                 lastDocumentMessage = "Mounted \(record.displayName) as live volume (read-only)"
             case (.snapshot, _):
@@ -161,9 +164,10 @@ final class AppModel: ObservableObject {
                 NSWorkspace.shared.open(record.mountURL)
             }
         } catch {
-            lastError = error.localizedDescription
+            let msg = Self.errorMessage(error)
+            lastError = msg
             lastDocumentMessage = nil
-            log.error("Mount failed: \(error.localizedDescription, privacy: .public)")
+            log.error("Mount failed: \(msg, privacy: .public)")
             presentMountError(error, url: url)
         }
     }
@@ -206,7 +210,7 @@ final class AppModel: ObservableObject {
     private func presentMountError(_ error: Error, url: URL) {
         let alert = NSAlert()
         alert.messageText = "Could not open \(url.lastPathComponent)"
-        alert.informativeText = error.localizedDescription
+        alert.informativeText = Self.errorMessage(error)
         alert.alertStyle = .warning
         if case .unavailable = mountService.fuseStatus() {
             alert.addButton(withTitle: "OK")
@@ -219,6 +223,12 @@ final class AppModel: ObservableObject {
             alert.addButton(withTitle: "OK")
             alert.runModal()
         }
+    }
+
+    private static func errorMessage(_ error: Error) -> String {
+        if let e = error as? X68Error { return e.message }
+        if let e = error as? LocalizedError, let d = e.errorDescription { return d }
+        return error.localizedDescription
     }
 
     private func isDiskImage(_ url: URL) -> Bool {

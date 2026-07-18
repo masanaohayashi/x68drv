@@ -101,16 +101,14 @@ public final class MountService: @unchecked Sendable {
         let disk = try DiskImage.open(url: standardized)
         _ = try disk.openVolume(partitionIndex: partitionIndex)
 
-        if experimentalWrite {
+        // Write mode only for HDS/HDF. Other formats mount read-only (setting stays on).
+        let writeEligible: Bool = {
+            guard experimentalWrite else { return false }
             switch disk.detection.kind {
-            case .hds, .hdf:
-                break
-            default:
-                throw X68Error.unsupported(
-                    "Experimental write mount supports HDS/HDF only (got \(disk.detection.kind.rawValue))"
-                )
+            case .hds, .hdf: return true
+            default: return false
             }
-        }
+        }()
 
         let fuse = FuseAvailability.probe(fileManager: fileManager)
         var record: MountRecord?
@@ -122,16 +120,16 @@ public final class MountService: @unchecked Sendable {
                         helper: helper,
                         imageURL: standardized,
                         partitionIndex: partitionIndex,
-                        experimentalWrite: experimentalWrite
+                        experimentalWrite: writeEligible
                     )
                 } catch {
-                    if experimentalWrite {
-                        // Write intent must not silently become a RO folder.
+                    if writeEligible {
+                        // HDS/HDF write intent must not silently become a RO folder.
                         throw error
                     }
                     fputs("x68drv: FUSE mount failed (\(error)); falling back to snapshot\n", stderr)
                 }
-            } else if experimentalWrite {
+            } else if writeEligible {
                 throw X68Error.io(
                     "Experimental write requires x68mount-helper (rebuild the app or: swift build --product x68mount-helper)"
                 )
@@ -141,7 +139,7 @@ public final class MountService: @unchecked Sendable {
                     stderr
                 )
             }
-        } else if experimentalWrite {
+        } else if writeEligible {
             let reason: String
             if case .unavailable(let r) = fuse {
                 reason = r
