@@ -7,4 +7,9 @@ final class X68CoreTests: XCTestCase {
         XCTAssertEqual(parts.count, 3)
         XCTAssertFalse(X68Core.version.isEmpty)
     }
+
+    func testErrorMessages() {
+        let err = X68Error.format("bad magic")
+        XCTAssertEqual(err.localizedDescription, "bad magic")
+    }
 }

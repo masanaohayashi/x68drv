@@ -100,25 +100,25 @@ flowchart LR
 
 | ID | タスク | 完了条件 |
 |----|--------|----------|
-| T1.1 | `EndianReader` / `EndianWriter`（BE/LE 16/32） | ユニットテスト |
-| T1.2 | `HumanPath`（コンポーネント列、SJIS 安全な 8.3/18.3 分割） | 境界文字（2 バイト跨ぎ）テスト |
-| T1.3 | `cp932` ↔ UTF-8（`String` 変換 + 不能時 escape） | 日本語ファイル名ラウンドトリップ |
-| T1.4 | `X68Error` 列挙（format / fs / io / limit） | — |
-| T1.5 | **SyntheticXDF** ファクトリ（最小 LE FAT12、1232K 相当または縮小可読ボリューム※） | バイト列をファイルに書ける |
-| T1.6 | **SyntheticHDS** ファクトリ（`X68SCSI1` + `X68K` + BE BPB + 空ルート） | オフセットが design 付録 A と一致 |
-
-※ 縮小ボリュームを使う場合でも、本番 XDF パスは **1261568 固定**を別テストで。
+| T1.1 | `EndianReader` / `EndianWriter`（BE/LE 16/32） | ✅ |
+| T1.2 | `HumanPath`（コンポーネント列、SJIS 安全な 8.3/18.3 分割） | ✅ |
+| T1.3 | `cp932` ↔ UTF-8（`String` 変換 + 不能時 escape） | ✅ |
+| T1.4 | `X68Error` 列挙（format / fs / io / limit） | ✅ |
+| T1.5 | **SyntheticXDF** ファクトリ（フル 1232K LE FAT12） | ✅ size==1261568 |
+| T1.6 | **SyntheticHDS** ファクトリ（`X68SCSI1` + `X68K` + BE BPB） | ✅ |
 
 ### テスト（必須）
 
-| テスト ID | 内容 |
-|-----------|------|
-| U1.endian | 既知バイト列 → BE/LE 数値 |
-| U1.path | `"長い名前.TXT"` の 18.3 パック / アンパック、trail-byte 非分割 |
-| U1.enc | `テスト.DAT` の UTF-8 ↔ cp932 |
-| U1.synth_xdf_size | フル XDF 合成は size==1261568（またはフラグで full） |
-| U1.synth_hds_magic | 先頭 `X68SCSI1`、`0x800` に `X68K`、`Human68k` エントリ |
-| U1.sjis_split | 8 バイト境界で DBCS を割らない |
+| テスト ID | 内容 | 状態 |
+|-----------|------|------|
+| U1.endian | 既知バイト列 → BE/LE 数値 | ✅ |
+| U1.path | 18.3 パック / アンパック | ✅ |
+| U1.enc | `テスト.DAT` の UTF-8 ↔ cp932 | ✅ |
+| U1.synth_xdf_size | フル XDF size==1261568 | ✅ |
+| U1.synth_hds_magic | `X68SCSI1` / `X68K@0x800` / Human68k | ✅ |
+| U1.sjis_split | 8 バイト境界で DBCS を割らない | ✅ |
+
+**Phase 1 完了**（2026-07-18）: `swift test` 15 tests pass。
 
 ### 参照
 
