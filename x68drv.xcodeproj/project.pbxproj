@@ -90,6 +90,7 @@
 				A10000000000000000000003 /* Sources */,
 				A10000000000000000000004 /* Frameworks */,
 				A10000000000000000000005 /* Resources */,
+				A10000000000000000000040 /* Embed x68mount-helper */,
 			);
 			buildRules = (
 			);
@@ -104,6 +105,30 @@
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A10000000000000000000040 /* Embed x68mount-helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed x68mount-helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/x68mount-helper",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\ncd \"${SRCROOT}\"\nCONFIG_FLAG=\"debug\"\nif [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  CONFIG_FLAG=\"release\"\nfi\n/usr/bin/xcrun --sdk macosx swift build --product x68mount-helper -c \"${CONFIG_FLAG}\"\nHELPER_SRC=\"\"\nfor cand in \\\n  \".build/${CONFIG_FLAG}/x68mount-helper\" \\\n  \".build/arm64-apple-macosx/${CONFIG_FLAG}/x68mount-helper\" \\\n  \".build/x86_64-apple-macosx/${CONFIG_FLAG}/x68mount-helper\"\ndo\n  if [ -x \"${cand}\" ]; then\n    HELPER_SRC=\"${cand}\"\n    break\n  fi\ndone\nif [ -z \"${HELPER_SRC}\" ]; then\n  echo \"error: x68mount-helper not found after swift build\" >&2\n  exit 1\nfi\nHELPER_DIR=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\nmkdir -p \"${HELPER_DIR}\"\ncp -f \"${HELPER_SRC}\" \"${HELPER_DIR}/x68mount-helper\"\nchmod +x \"${HELPER_DIR}/x68mount-helper\"\nENT=\"${SRCROOT}/Apps/x68drv/x68mount-helper.entitlements\"\n# Prefer the target's identity (Developer ID / Apple Development); fall back to ad-hoc for local Run.\nID=\"${EXPANDED_CODE_SIGN_IDENTITY:-}\"\nif [ -z \"${ID}\" ] || [ \"${ID}\" = \"-\" ]; then\n  ID=\"${CODE_SIGN_IDENTITY:-}\"\nfi\nif [ -n \"${ID}\" ] && [ \"${ID}\" != \"-\" ] && [ \"${ID}\" != \"Sign to Run Locally\" ]; then\n  codesign --force --options runtime --timestamp --entitlements \"${ENT}\" --sign \"${ID}\" \"${HELPER_DIR}/x68mount-helper\" || \\\n    codesign --force --options runtime --timestamp=none --entitlements \"${ENT}\" --sign \"${ID}\" \"${HELPER_DIR}/x68mount-helper\" || true\nelse\n  codesign --force --sign - --timestamp=none --entitlements \"${ENT}\" \"${HELPER_DIR}/x68mount-helper\" || true\nfi\necho \"Embedded ${HELPER_SRC} -> ${HELPER_DIR}/x68mount-helper (sign identity: ${ID:--})\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXProject section */
 		A10000000000000000000001 /* Project object */ = {
@@ -203,9 +228,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Apps/x68drv/x68drv.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Apps/x68drv/Info.plist;
@@ -214,7 +241,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.x68drv.x68drv;
+				PRODUCT_BUNDLE_IDENTIFIER = "tokyo.studio-r.x68drv";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -225,9 +252,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Apps/x68drv/x68drv.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Apps/x68drv/Info.plist;
@@ -236,7 +265,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.x68drv.x68drv;
+				PRODUCT_BUNDLE_IDENTIFIER = "tokyo.studio-r.x68drv";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

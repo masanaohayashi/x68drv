@@ -48,11 +48,13 @@ docs/                 # design, research, implementation plan
 
 | FUSE-T / macFUSE | Behavior |
 |------------------|----------|
-| **Installed** | Live RO mount under **`/Volumes/x68drv-…`** via `x68mount-helper` (Finder volume, drag-and-drop) |
+| **Installed** | Live RO FUSE volume via bundled `x68mount-helper` (Finder shows volume name = image file; mountpoint under `~/Library/Application Support/x68drv/Volumes/`) |
 | **Not installed** | Temporary **snapshot folder** under Application Support (still works for copy-out) |
 
+Xcode builds embed `x68mount-helper` into `x68drv.app/Contents/Helpers/`. FUSE-T is loaded at runtime from `/Library/Frameworks/fuse_t.framework`.
+
 ```bash
-# Build the FUSE helper (links symbols at runtime; needs FUSE-T installed to actually mount)
+# Build the FUSE helper alone (optional; Xcode Run does this)
 swift build --product x68mount-helper
 
 # Optional CLI mount test
@@ -62,8 +64,18 @@ swift run x68drv-tool mount path/to/disk.xdf
 Install FUSE-T: https://www.fuse-t.org/  
 (or `brew install macos-fuse-t/cask/fuse-t` — needs admin password)
 
-See [`docs/implementation-plan.md`](docs/implementation-plan.md).
+**Note:** FUSE-T uses NFS under the hood. Terminal `ls` may need **System Settings → Privacy & Security → Files and Folders → Network Volumes**. Finder usually works without that.
 
+## Distribution (Hardened Runtime + notarization)
+
+**Not** App Sandbox / Mac App Store. Ship with Developer ID + Apple notarization.
+
+- Entitlements: `Apps/x68drv/x68drv.entitlements` (app), `x68mount-helper.entitlements` (helper)
+- Only special entitlement: `disable-library-validation` (load system FUSE-T framework)
+- Guide: [`docs/distribution.md`](docs/distribution.md)
+- Script: `./scripts/sign-and-notarize.sh --app …/x68drv.app --identity "Developer ID Application: …" --notary-profile x68drv-notary`
+
+See also [`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 ## License
 

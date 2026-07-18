@@ -50,7 +50,7 @@ final class HdfVolumeTests: XCTestCase {
         let url = tmp.appendingPathComponent("t.hdf")
         try image.write(to: url)
         let service = MountService(mountsRoot: tmp.appendingPathComponent("Mounts"))
-        let record = try service.mount(url: url)
+        let record = try service.mount(url: url, preferFuse: false)
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: record.mountURL.appendingPathComponent("M.DAT").path)
         )

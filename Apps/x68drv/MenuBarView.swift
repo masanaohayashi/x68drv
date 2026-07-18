@@ -63,7 +63,7 @@ struct MenuBarView: View {
         Divider()
 
         Button("Quit x68drv") {
-            model.ejectAll()
+            // ejectAll also runs in applicationShouldTerminate
             NSApp.terminate(nil)
         }
     }
@@ -71,7 +71,7 @@ struct MenuBarView: View {
     private func mountLabel(_ mount: MountRecord) -> String {
         switch mount.backend {
         case .fuse:
-            return "\(mount.displayName) [/Volumes]"
+            return "\(mount.displayName) [volume]"
         case .snapshot:
             return "\(mount.displayName) [folder]"
         }

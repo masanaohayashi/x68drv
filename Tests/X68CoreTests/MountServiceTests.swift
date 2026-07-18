@@ -55,7 +55,8 @@ final class MountServiceTests: XCTestCase {
 
         let mountsRoot = tmp.appendingPathComponent("Mounts", isDirectory: true)
         let service = MountService(mountsRoot: mountsRoot)
-        let r1 = try service.mount(url: imageURL)
+        // Unit tests always use snapshot (no FUSE dependency).
+        let r1 = try service.mount(url: imageURL, preferFuse: false)
         XCTAssertEqual(r1.backend, .snapshot)
         XCTAssertTrue(FileManager.default.fileExists(atPath: r1.mountURL.appendingPathComponent("HELLO.TXT").path))
         let data = try Data(contentsOf: r1.mountURL.appendingPathComponent("HELLO.TXT"))
@@ -84,16 +85,42 @@ final class MountServiceTests: XCTestCase {
             )
             let url = tmp.appendingPathComponent("f\(i).xdf")
             try image.write(to: url)
-            _ = try service.mount(url: url)
+            _ = try service.mount(url: url, preferFuse: false)
         }
         let image = try SyntheticXDF.makeEmpty2HD()
         let url = tmp.appendingPathComponent("overflow.xdf")
         try image.write(to: url)
-        XCTAssertThrowsError(try service.mount(url: url))
+        XCTAssertThrowsError(try service.mount(url: url, preferFuse: false))
         try service.ejectAll()
     }
 
     func testSanitizeHostFileName() {
         XCTAssertEqual(SnapshotExporter.sanitizeHostFileName("a/b:c"), "a_b_c")
+    }
+
+    /// Crash / quit-without-eject leaves snapshot dirs; reclaimOrphans removes them.
+    func testReclaimOrphanSnapshots() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("x68-orphan-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let service = MountService(mountsRoot: tmp.appendingPathComponent("Mounts"))
+        let image = try SyntheticXDF.make2HD(
+            fileName: HumanFileName(stem: "ORPH", ext: "TXT"),
+            contents: Data("x".utf8)
+        )
+        let url = tmp.appendingPathComponent("o.xdf")
+        try image.write(to: url)
+        let record = try service.mount(url: url, preferFuse: false)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: record.mountURL.path))
+
+        // Simulate process death: drop in-memory state without tearDown.
+        // (New service instance looking at same roots.)
+        let service2 = MountService(mountsRoot: tmp.appendingPathComponent("Mounts"))
+        XCTAssertTrue(service2.mounts.isEmpty)
+        let cleaned = service2.reclaimOrphans()
+        XCTAssertGreaterThanOrEqual(cleaned, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: record.mountURL.path))
     }
 }

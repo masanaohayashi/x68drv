@@ -4,7 +4,7 @@ import os.log
 
 /// Handles document open and single-instance style routing.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let log = Logger(subsystem: "app.x68drv.x68drv", category: "AppDelegate")
+    private let log = Logger(subsystem: "tokyo.studio-r.x68drv", category: "AppDelegate")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Allow .onOpenURL / open-file events to queue first.
@@ -31,5 +31,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Menu bar app stays alive after settings OK.
         false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Eject FUSE volumes + delete snapshot folders before process exit.
+        // Force-quit (SIGKILL) skips this — orphans are cleaned on next launch.
+        Task { @MainActor in
+            AppModel.shared.prepareForTermination()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Belt-and-suspenders if ShouldTerminate path was skipped.
+        Task { @MainActor in
+            AppModel.shared.prepareForTermination()
+        }
     }
 }

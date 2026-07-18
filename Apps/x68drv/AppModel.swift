@@ -9,7 +9,7 @@ import os.log
 final class AppModel: ObservableObject {
     static let shared = AppModel()
 
-    private let log = Logger(subsystem: "app.x68drv.x68drv", category: "AppModel")
+    private let log = Logger(subsystem: "tokyo.studio-r.x68drv", category: "AppModel")
     private let mountService = MountService.shared
 
     @Published private(set) var launchMode: LaunchMode = .interactive
@@ -38,9 +38,28 @@ final class AppModel: ObservableObject {
 
     private init() {
         launchedAsLoginItem = LaunchRouter.isExplicitLoginLaunch()
+        // Previous crash / force-quit / quit-without-eject can leave FUSE mounts
+        // and snapshot folders under Application Support — reclaim before UI work.
+        let cleaned = mountService.reclaimOrphans()
+        if cleaned > 0 {
+            log.info("Reclaimed \(cleaned) orphan mount leftover(s)")
+        }
         refreshLoginItemState()
         refreshFuseStatus()
         mounts = mountService.mounts
+    }
+
+    /// Called on normal app quit (Quit menu, terminate, logout when allowed).
+    func prepareForTermination() {
+        do {
+            try mountService.ejectAll()
+            mounts = []
+        } catch {
+            log.error("ejectAll on quit: \(error.localizedDescription, privacy: .public)")
+            // Still try a full reclaim so disks don't stay mounted.
+            _ = mountService.reclaimOrphans()
+            mounts = []
+        }
     }
 
     func finalizeLaunchRouting() {
@@ -113,9 +132,9 @@ final class AppModel: ObservableObject {
             mounts = mountService.mounts
             switch record.backend {
             case .fuse:
-                lastDocumentMessage = "Mounted \(record.displayName) as volume \(record.mountURL.path)"
+                lastDocumentMessage = "Mounted \(record.displayName) as live volume"
             case .snapshot:
-                lastDocumentMessage = "Opened \(record.displayName) as temporary folder (install FUSE-T for /Volumes mount)"
+                lastDocumentMessage = "Opened \(record.displayName) as temporary folder (install FUSE-T + rebuild for live volume)"
             }
             log.info("Mounted \(record.displayName, privacy: .public) backend=\(record.backend.rawValue, privacy: .public)")
             if revealInFinder {

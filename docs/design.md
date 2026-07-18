@@ -104,7 +104,7 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 - **ターミナルを主 UI にした製品**
 - **イメージへの書込**（Finder からイメージへ D&D で書き込むことは 0.1 対象外。コピーは **イメージ → Mac** のみ）
 - カーネル拡張（kext）
-- Mac App Store 配布（FUSE と相性。直配布 + 公証）
+- Mac App Store / **App Sandbox**（FUSE-T と非互換。配布は **Hardened Runtime + Developer ID 公証**のみ。手順は [`distribution.md`](distribution.md)）
 - Windows / Linux 公式パッケージ
 - D88 / FDI 等の複雑コピープロテクト
 - **v0.1 の非 1232KB フロッピー** の完全サポート
@@ -212,7 +212,7 @@ x68drv
 
 実装メモ:
 
-- `CFBundleDocumentTypes` / imported UTI（例: `app.x68drv.disk-image` を自前定義し、拡張子を紐付け）  
+- `CFBundleDocumentTypes` / imported UTI（例: `tokyo.studio-r.x68drv.disk-image` を自前定義し、拡張子を紐付け）  
 - アイコンは v0.1 でシステム汎用でも可  
 - **「このアプリケーションで開く」** とダブルクリックの両方で Mode C  
 - 未対応サイズ / 未知 HDF クラス → アラートで理由を示し、マウントしない  
@@ -1184,7 +1184,7 @@ erDiagram
 | OQ2 | DiskExplorer HDD と SASI/SCSI 差 | **Open** — OQ1 の残りと同時。HDS 側は `System.HDS` で scsitools モデル確認済 |
 | OQ3 | 非 1232K フロッピー | **Resolved for v0.1** |
 | OQ4 | Finder 書込時 rename | **Deferred** |
-| OQ5 | アプリ名 / バンドル ID | **Lean**: 表示名 `x68drv`。bundle id は実装時（例: 開発者ドメイン） |
+| OQ5 | アプリ名 / バンドル ID | **Lean**: 表示名 `x68drv`。bundle id `tokyo.studio-r.x68drv` |
 | OQ6 | ライセンス | **Resolved**: MIT |
 | OQ7 | タイムゾーン | **Resolved**: ローカル |
 | OQ8 | FUSE を v0.1 必須にするか | **Resolved (Rev.6)**: **Finder 本線のため FUSE-T は実質必須**。未導入は導入案内。FO は救済 |

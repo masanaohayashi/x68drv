@@ -125,7 +125,19 @@ static struct fuse_operations x68_ops = {
 };
 
 static void try_load_fuse_libs(void) {
+    /* FUSE-T 1.x installs as a framework + versioned dylib under
+     * /Library/Application Support/fuse-t — not always as libfuse-t.dylib
+     * on the default dyld path. */
     const char *paths[] = {
+        /* FUSE-T framework (current installer) */
+        "/Library/Frameworks/fuse_t.framework/fuse_t",
+        "/Library/Frameworks/fuse_t.framework/Versions/Current/fuse_t",
+        "/Library/Frameworks/fuse_t.framework/Versions/A/fuse_t",
+        /* FUSE-T Application Support tree */
+        "/Library/Application Support/fuse-t/lib/libfuse-t-1.2.7.dylib",
+        "/Library/Application Support/fuse-t/lib/libfuse-t.dylib",
+        "/Library/Application Support/fuse-t/lib/libfuse3.dylib",
+        /* Classic / Homebrew locations */
         "libfuse-t.dylib",
         "/usr/local/lib/libfuse-t.dylib",
         "/opt/homebrew/lib/libfuse-t.dylib",
@@ -134,6 +146,7 @@ static void try_load_fuse_libs(void) {
         "/opt/homebrew/lib/libfuse.2.dylib",
         "/usr/local/lib/libfuse.dylib",
         "/opt/homebrew/lib/libfuse.dylib",
+        "libfuse3.dylib",
         NULL
     };
     for (int i = 0; paths[i]; i++) {

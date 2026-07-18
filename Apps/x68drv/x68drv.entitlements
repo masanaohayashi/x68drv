@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Distribution model: Hardened Runtime + Developer ID notarization.
+	  App Sandbox is intentionally OFF (FUSE-T / helper / Finder volume CX).
+	-->
+
+	<!--
+	  x68mount-helper dlopen()s /Library/Frameworks/fuse_t.framework
+	  (and optional macFUSE dylibs). Those are signed by another Team ID,
+	  so library validation must be relaxed under Hardened Runtime.
+	-->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

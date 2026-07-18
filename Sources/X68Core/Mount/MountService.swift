@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public enum MountBackend: String, Equatable, Sendable {
     /// Live FUSE-T / macFUSE volume (shows under /Volumes).
@@ -40,7 +41,10 @@ public final class MountService: @unchecked Sendable {
     public var maxMounts: Int = MountPointNamer.maxMounts
 
     private let fileManager: FileManager
+    /// Snapshot (non-FUSE) export root under Application Support.
     private let mountsRoot: URL
+    /// Live FUSE mountpoints (user-writable; FUSE-T shows `volname` in Finder).
+    private let fuseMountsRoot: URL
     private let lock = NSLock()
     private var fuseProcesses: [UUID: Process] = [:]
 
@@ -48,12 +52,13 @@ public final class MountService: @unchecked Sendable {
         self.fileManager = fileManager
         if let mountsRoot {
             self.mountsRoot = mountsRoot
+            self.fuseMountsRoot = mountsRoot.appendingPathComponent("Fuse", isDirectory: true)
         } else {
             let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
                 ?? fileManager.temporaryDirectory
-            self.mountsRoot = base
-                .appendingPathComponent("x68drv", isDirectory: true)
-                .appendingPathComponent("Mounts", isDirectory: true)
+            let app = base.appendingPathComponent("x68drv", isDirectory: true)
+            self.mountsRoot = app.appendingPathComponent("Mounts", isDirectory: true)
+            self.fuseMountsRoot = app.appendingPathComponent("Volumes", isDirectory: true)
         }
     }
 
@@ -90,16 +95,23 @@ public final class MountService: @unchecked Sendable {
         let fuse = FuseAvailability.probe(fileManager: fileManager)
         var record: MountRecord?
 
-        if preferFuse, fuse.isAvailable, let helper = helperExecutable() {
-            do {
-                record = try mountWithFuse(
-                    helper: helper,
-                    imageURL: standardized,
-                    partitionIndex: partitionIndex
+        if preferFuse, fuse.isAvailable {
+            if let helper = helperExecutable() {
+                do {
+                    record = try mountWithFuse(
+                        helper: helper,
+                        imageURL: standardized,
+                        partitionIndex: partitionIndex
+                    )
+                } catch {
+                    // Fall through to snapshot
+                    fputs("x68drv: FUSE mount failed (\(error)); falling back to snapshot\n", stderr)
+                }
+            } else {
+                fputs(
+                    "x68drv: FUSE is installed but x68mount-helper was not found; falling back to snapshot\n",
+                    stderr
                 )
-            } catch {
-                // Fall through to snapshot
-                fputs("FUSE mount failed (\(error)); falling back to snapshot\n", stderr)
             }
         }
 
@@ -150,7 +162,7 @@ public final class MountService: @unchecked Sendable {
                 p.terminate()
             }
             do {
-                try tearDownFiles(record)
+                try tearDownFiles(record, forceUnmount: record.backend == .fuse)
             } catch {
                 if firstError == nil { firstError = error }
             }
@@ -165,6 +177,31 @@ public final class MountService: @unchecked Sendable {
         }
     }
 
+    /// Recover leftovers after crash / force-quit / quit without eject.
+    ///
+    /// - Terminates stray `x68mount-helper` processes for our mount roots
+    /// - Force-unmounts anything still mounted under the FUSE root
+    /// - Deletes orphan snapshot folders and empty mountpoint dirs
+    ///
+    /// Safe to call on every launch (in-memory mount list is empty then).
+    @discardableResult
+    public func reclaimOrphans() -> Int {
+        lock.lock()
+        // If we still have live mounts in this process, only clean *unknown* dirs.
+        let livePaths = Set(mounts.map { $0.mountURL.standardizedFileURL.path })
+        lock.unlock()
+
+        var cleaned = 0
+        terminateStrayHelpers()
+        cleaned += reclaimDirectoryTree(at: fuseMountsRoot, livePaths: livePaths, unmountFirst: true)
+        cleaned += reclaimDirectoryTree(at: mountsRoot, livePaths: livePaths, unmountFirst: false)
+        return cleaned
+    }
+
+    /// Paths we manage (for diagnostics / tests).
+    public var snapshotRootURL: URL { mountsRoot }
+    public var fuseRootURL: URL { fuseMountsRoot }
+
     // MARK: - backends
 
     private func mountWithFuse(
@@ -172,19 +209,30 @@ public final class MountService: @unchecked Sendable {
         imageURL: URL,
         partitionIndex: Int
     ) throws -> MountRecord {
-        let leafBase = MountPointNamer.sanitizeBaseName(imageURL.lastPathComponent)
-        let partSuffix = partitionIndex == 0 ? "" : "-p\(partitionIndex)"
-        var leaf = "x68drv-\(leafBase)\(partSuffix)"
-        var mountURL = URL(fileURLWithPath: "/Volumes/\(leaf)")
-        var n = 1
-        while fileManager.fileExists(atPath: mountURL.path), n < 50 {
-            leaf = "x68drv-\(leafBase)\(partSuffix)-\(n)"
-            mountURL = URL(fileURLWithPath: "/Volumes/\(leaf)")
-            n += 1
-        }
+        // Prefer a user-writable mountpoint. Creating under /Volumes needs root on modern
+        // macOS; FUSE-T still surfaces `volname` in Finder (sidebar / Desktop) via NFS.
+        try fileManager.createDirectory(at: fuseMountsRoot, withIntermediateDirectories: true)
 
-        // Create empty mount point (FUSE-T will attach)
-        try? fileManager.createDirectory(at: mountURL, withIntermediateDirectories: true)
+        let existingNames = Set(
+            (try? fileManager.contentsOfDirectory(atPath: fuseMountsRoot.path)) ?? []
+        ).union(Set(mounts.map(\.mountURL.lastPathComponent)))
+
+        let mountURL = try MountPointNamer.allocate(
+            baseDirectory: fuseMountsRoot,
+            imageFileName: imageURL.lastPathComponent,
+            partitionIndex: partitionIndex,
+            existing: existingNames,
+            fileManager: fileManager
+        )
+        // Fresh empty directory for the mount point
+        if fileManager.fileExists(atPath: mountURL.path) {
+            try fileManager.removeItem(at: mountURL)
+        }
+        try fileManager.createDirectory(at: mountURL, withIntermediateDirectories: true)
+
+        let volName = fuseVolumeName(for: imageURL, partitionIndex: partitionIndex)
+        // noappledouble: fewer junk files; local: treat as local volume in Finder
+        let fuseOpts = "volname=\(volName),rdonly,local,noappledouble,noapplexattr"
 
         let process = Process()
         process.executableURL = helper
@@ -192,7 +240,7 @@ public final class MountService: @unchecked Sendable {
             imageURL.path,
             mountURL.path,
             "--partition", "\(partitionIndex)",
-            "-o", "volname=\(imageURL.lastPathComponent),rdonly,local,allow_other",
+            "-o", fuseOpts,
         ]
         let errPipe = Pipe()
         process.standardError = errPipe
@@ -200,8 +248,8 @@ public final class MountService: @unchecked Sendable {
 
         try process.run()
 
-        // Wait until mount is live (or process dies)
-        let deadline = Date().addingTimeInterval(8)
+        // Wait until the path appears in the mount table (empty dir is NOT enough).
+        let deadline = Date().addingTimeInterval(10)
         var mounted = false
         while Date() < deadline {
             if !process.isRunning {
@@ -210,8 +258,7 @@ public final class MountService: @unchecked Sendable {
                 try? fileManager.removeItem(at: mountURL)
                 throw X68Error.io("FUSE helper exited early: \(errText)")
             }
-            // Check for a successful mount: path exists and is not empty or resource fork
-            if isLikelyMounted(mountURL) {
+            if isPathMounted(mountURL) {
                 mounted = true
                 break
             }
@@ -220,6 +267,12 @@ public final class MountService: @unchecked Sendable {
 
         if !mounted {
             process.terminate()
+            // Best-effort unmount if half-attached
+            let umount = Process()
+            umount.executableURL = URL(fileURLWithPath: "/sbin/umount")
+            umount.arguments = [mountURL.path]
+            try? umount.run()
+            umount.waitUntilExit()
             try? fileManager.removeItem(at: mountURL)
             throw X68Error.io("Timed out waiting for FUSE mount at \(mountURL.path)")
         }
@@ -235,16 +288,41 @@ public final class MountService: @unchecked Sendable {
         return record
     }
 
-    private func isLikelyMounted(_ url: URL) -> Bool {
-        // On success, getattr("/") works and mount table lists it.
-        var statBuf = stat()
-        if stat(url.path, &statBuf) != 0 { return false }
-        // Snapshot dirs also exist — for FUSE, process is running and path is mountpoint.
-        // Check mntfromname via getmntinfo if needed; simple check: can readdir
-        if let contents = try? fileManager.contentsOfDirectory(atPath: url.path) {
-            // Empty root is valid; existence of directory after helper started is enough if process lives.
-            _ = contents
-            return true
+    private func fuseVolumeName(for imageURL: URL, partitionIndex: Int) -> String {
+        let base = imageURL.lastPathComponent
+        if partitionIndex == 0 { return base }
+        return "\(base) (p\(partitionIndex))"
+    }
+
+    /// True when `url` is an active mount point (not merely an empty directory).
+    private func isPathMounted(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        // Prefer getfsstat — avoids spawning mount(8) and is cheap.
+        var fs = statfs()
+        guard statfs(path, &fs) == 0 else { return false }
+        // mntonname is the mount point path
+        let mnton = withUnsafePointer(to: &fs.f_mntonname) {
+            $0.withMemoryRebound(to: CChar.self, capacity: Int(MNAMELEN)) {
+                String(cString: $0)
+            }
+        }
+        let std = path
+        let priv = path.hasPrefix("/private/") ? String(path.dropFirst("/private".count)) : "/private" + path
+        if mnton == std || mnton == priv || mnton == path { return true }
+        // Also: if filesystem type looks like nfs/fuse and mount-from is fuse-t
+        let mntfrom = withUnsafePointer(to: &fs.f_mntfromname) {
+            $0.withMemoryRebound(to: CChar.self, capacity: Int(MNAMELEN)) {
+                String(cString: $0)
+            }
+        }
+        if mntfrom.hasPrefix("fuse-t:") { return true }
+        // Directory exists but is not a mount → mntonname is a parent (e.g. /)
+        // Compare device of path vs parent.
+        var parentStat = stat()
+        var selfStat = stat()
+        let parent = (path as NSString).deletingLastPathComponent
+        if stat(path, &selfStat) == 0, stat(parent, &parentStat) == 0 {
+            return selfStat.st_dev != parentStat.st_dev
         }
         return false
     }
@@ -282,54 +360,203 @@ public final class MountService: @unchecked Sendable {
     private func tearDown(_ record: MountRecord) throws {
         if let proc = fuseProcesses.removeValue(forKey: record.id), proc.isRunning {
             proc.terminate()
-            // Give FUSE-T a moment; also umount
-            let umount = Process()
-            umount.executableURL = URL(fileURLWithPath: "/sbin/umount")
-            umount.arguments = [record.mountURL.path]
-            try? umount.run()
-            umount.waitUntilExit()
+            // Brief wait so FUSE-T can exit cleanly before umount.
+            let deadline = Date().addingTimeInterval(1.5)
+            while proc.isRunning, Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if proc.isRunning {
+                proc.terminate() // already sent; macOS has no Process.interrupt reliably → kill via signal
+                kill(proc.processIdentifier, SIGKILL)
+            }
         }
-        try tearDownFiles(record)
+        try tearDownFiles(record, forceUnmount: record.backend == .fuse)
     }
 
-    private func tearDownFiles(_ record: MountRecord) throws {
-        switch record.backend {
-        case .snapshot:
-            if fileManager.fileExists(atPath: record.mountURL.path) {
-                try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: record.mountURL.path)
-                try fileManager.removeItem(at: record.mountURL)
+    private func tearDownFiles(_ record: MountRecord, forceUnmount: Bool = false) throws {
+        if forceUnmount || record.backend == .fuse {
+            unmountPath(record.mountURL)
+        }
+        guard fileManager.fileExists(atPath: record.mountURL.path) else { return }
+        // Snapshots are chmod 0555; bump perms so delete works.
+        try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: record.mountURL.path)
+        try fileManager.removeItem(at: record.mountURL)
+    }
+
+    private func unmountPath(_ url: URL) {
+        let path = url.path
+        // Skip if nothing is mounted here (avoids hanging umount on plain folders).
+        guard isPathMounted(url) else { return }
+
+        runProcessWithTimeout(
+            executable: "/sbin/umount",
+            arguments: [path],
+            timeout: 2
+        )
+        if isPathMounted(url) {
+            runProcessWithTimeout(
+                executable: "/usr/sbin/diskutil",
+                arguments: ["unmount", "force", path],
+                timeout: 3
+            )
+        }
+    }
+
+    /// Run a short-lived helper process; kill it if it exceeds `timeout` (NFS hard-mount hang).
+    private func runProcessWithTimeout(executable: String, arguments: [String], timeout: TimeInterval) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: executable)
+        proc.arguments = arguments
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        do {
+            try proc.run()
+        } catch {
+            return
+        }
+        let deadline = Date().addingTimeInterval(timeout)
+        while proc.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if proc.isRunning {
+            proc.terminate()
+            usleep(50_000)
+            if proc.isRunning {
+                kill(proc.processIdentifier, SIGKILL)
             }
-        case .fuse:
-            if fileManager.fileExists(atPath: record.mountURL.path) {
-                // Unmount should remove contents; clean empty dir if left
-                try? fileManager.removeItem(at: record.mountURL)
+        }
+    }
+
+    /// Delete unknown children under a managed root (orphan recovery).
+    private func reclaimDirectoryTree(at root: URL, livePaths: Set<String>, unmountFirst: Bool) -> Int {
+        guard fileManager.fileExists(atPath: root.path) else { return 0 }
+        let children: [URL]
+        do {
+            children = try fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            return 0
+        }
+        var cleaned = 0
+        for child in children {
+            let path = child.standardizedFileURL.path
+            if livePaths.contains(path) { continue }
+            if unmountFirst {
+                unmountPath(child)
             }
+            do {
+                try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+                // Walk RO tree
+                if let enumerator = fileManager.enumerator(atPath: path) {
+                    for case let rel as String in enumerator {
+                        let full = (path as NSString).appendingPathComponent(rel)
+                        try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: full)
+                    }
+                }
+                try fileManager.removeItem(at: child)
+                cleaned += 1
+            } catch {
+                fputs("x68drv: could not remove orphan \(path): \(error)\n", stderr)
+            }
+        }
+        return cleaned
+    }
+
+    /// Kill leftover helpers from a previous session that still hold our FUSE roots.
+    private func terminateStrayHelpers() {
+        // Use pgrep (small output) — full `ps -ax` + Pipe can deadlock when the
+        // pipe buffer fills and the parent waits for exit.
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        proc.arguments = ["-x", "x68mount-helper"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        do {
+            try proc.run()
+        } catch {
+            return
+        }
+        // Bounded wait
+        let deadline = Date().addingTimeInterval(2)
+        while proc.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        if proc.isRunning {
+            proc.terminate()
+            return
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let text = String(data: data, encoding: .utf8) else { return }
+
+        // PIDs of helpers we still own in this process — leave them alone.
+        lock.lock()
+        let livePIDs = Set(fuseProcesses.values.map(\.processIdentifier))
+        lock.unlock()
+
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let pid = Int32(line.trimmingCharacters(in: .whitespaces)) else { continue }
+            if pid == getpid() || livePIDs.contains(pid) { continue }
+            kill(pid, SIGTERM)
+            usleep(80_000)
+            kill(pid, SIGKILL)
         }
     }
 
     public func helperExecutable() -> URL? {
-        // 1) Next to unit-test / swift run products
-        let buildCandidates = [
-            // swift run debug
-            FileManager.default.currentDirectoryPath + "/.build/debug/x68mount-helper",
-            FileManager.default.currentDirectoryPath + "/.build/arm64-apple-macosx/debug/x68mount-helper",
-            FileManager.default.currentDirectoryPath + "/.build/release/x68mount-helper",
+        var candidates: [String] = []
+
+        // 1) Inside app bundle (product path)
+        let bundle = Bundle.main.bundleURL
+        candidates += [
+            bundle.appendingPathComponent("Contents/Helpers/x68mount-helper").path,
+            bundle.appendingPathComponent("Contents/MacOS/x68mount-helper").path,
+            bundle.appendingPathComponent("Contents/Resources/x68mount-helper").path,
         ]
-        for path in buildCandidates {
+        if let exeDir = Bundle.main.executableURL?.deletingLastPathComponent() {
+            candidates.append(exeDir.appendingPathComponent("x68mount-helper").path)
+        }
+
+        // 2) SPM / swift build next to cwd or known project layouts
+        let cwd = fileManager.currentDirectoryPath
+        candidates += [
+            cwd + "/.build/debug/x68mount-helper",
+            cwd + "/.build/arm64-apple-macosx/debug/x68mount-helper",
+            cwd + "/.build/x86_64-apple-macosx/debug/x68mount-helper",
+            cwd + "/.build/release/x68mount-helper",
+            cwd + "/.build/arm64-apple-macosx/release/x68mount-helper",
+        ]
+
+        // 3) When Xcode launches the app, cwd is often "/" — walk from executable
+        //    up looking for a sibling SPM checkout with a built helper.
+        if let exe = Bundle.main.executableURL {
+            var dir = exe.deletingLastPathComponent()
+            for _ in 0..<8 {
+                candidates += [
+                    dir.appendingPathComponent(".build/debug/x68mount-helper").path,
+                    dir.appendingPathComponent(".build/arm64-apple-macosx/debug/x68mount-helper").path,
+                    dir.appendingPathComponent(".build/release/x68mount-helper").path,
+                ]
+                let parent = dir.deletingLastPathComponent()
+                if parent.path == dir.path { break }
+                dir = parent
+            }
+        }
+
+        // 4) Developer convenience: absolute path via env
+        if let env = ProcessInfo.processInfo.environment["X68MOUNT_HELPER"] {
+            candidates.insert(env, at: 0)
+        }
+
+        for path in candidates {
             if fileManager.isExecutableFile(atPath: path) {
                 return URL(fileURLWithPath: path)
             }
         }
-        // 2) Inside app bundle Helpers/
-        if let helpers = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Helpers/x68mount-helper", isDirectory: false) as URL? {
-            if fileManager.isExecutableFile(atPath: helpers.path) { return helpers }
-        }
-        if let macOS = Bundle.main.executableURL?.deletingLastPathComponent()
-            .appendingPathComponent("x68mount-helper") {
-            if fileManager.isExecutableFile(atPath: macOS.path) { return macOS }
-        }
-        // 3) PATH
+        // 5) PATH
         if let path = findInPath("x68mount-helper") {
             return URL(fileURLWithPath: path)
         }

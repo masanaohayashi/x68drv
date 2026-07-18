@@ -19,7 +19,7 @@ struct SettingsView: View {
                     .textSelection(.enabled)
             }
 
-            Text("With FUSE-T installed, images mount under /Volumes like a normal disk. Without it, x68drv opens a temporary folder (still works for copy-out).")
+            Text("With FUSE-T installed, images mount as a live volume in Finder (volume name = image file). Without it, x68drv opens a temporary folder (still works for copy-out).")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
