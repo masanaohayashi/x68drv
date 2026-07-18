@@ -1,4 +1,4 @@
-# Reference-only emulator sources (not part of this project; analyze offline)
+# Local trees never shipped with the product
 /MPX68K/
 /xm6_206s/
 
@@ -28,8 +28,6 @@ CONFIG.SYS
 # Release / local build products
 /build/
 
-# Reference-only disk explorer (not part of this product)
 /L3DiskEx/
 
-# Reference-only HDD disk explorer (not part of this product)
 /DiFinder/

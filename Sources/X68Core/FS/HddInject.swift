@@ -6,7 +6,7 @@ import Foundation
 /// Commit semantics (in-memory then atomic host replace):
 /// data clusters → FAT copies → directory entry → host write.
 ///
-/// Reference (no code port): `docs/reference-difinder-write-path.md`, design.md ordered flush.
+/// See design.md ordered flush (experimental Stage A).
 public enum HddInject {
     public struct Result: Equatable, Sendable {
         public var remoteName: String
@@ -108,7 +108,7 @@ public enum HddInject {
         }
 
         // Cluster count: empty file still needs no cluster on some systems;
-        // Human68k/MS-DOS typically use cluster 0 for size 0. DiFinder allocates for size>0.
+        // Human68k/MS-DOS typically use cluster 0 for size 0.
         let bpc = bpb.bytesPerCluster
         let clusterCount: Int
         if contents.isEmpty {

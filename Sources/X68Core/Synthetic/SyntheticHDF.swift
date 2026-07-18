@@ -1,6 +1,6 @@
 import Foundation
 
-/// Minimal `hdf-sasi-x68k-256` image for tests (not XM6 40MB unless requested).
+/// Minimal `hdf-sasi-x68k-256` image for tests.
 public enum SyntheticHDF {
     public static let physSector = 256
     /// Partition 0 starts at LBA 33 → boot 0x2100 (matches real HD.hdf).

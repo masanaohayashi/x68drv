@@ -59,7 +59,7 @@ public struct DirEntry: Equatable, Sendable {
 
     /// Pack a 32-byte Human68k/MS-DOS-compatible directory entry.
     ///
-    /// Layout (DiFinder `directory_hu68k_t` / synthetic HDS):
+    /// Layout (Human68k 32-byte dir / synthetic HDS):
     /// name[8] + ext[3] + attr + name2[10] + wtime(LE) + wdate(LE) + cluster(LE) + size(LE).
     public static func pack(
         name: HumanFileName,

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Detects whether a FUSE-compatible stack (FUSE-T / macFUSE) is present.
+/// Detects whether a FUSE-compatible stack (FUSE-T or compatible libfuse) is present.
 public enum FuseAvailability: Equatable, Sendable {
     case available(detail: String)
     case unavailable(reason: String)
@@ -23,7 +23,7 @@ public enum FuseAvailability: Equatable, Sendable {
             "/Library/Application Support/fuse-t/lib/libfuse-t-1.2.7.dylib",
             "/Library/Application Support/fuse-t/lib/libfuse-t.dylib",
             "/Library/Application Support/fuse-t/bin/go-nfsv4",
-            // Classic dylib / Homebrew / macFUSE
+            // Classic dylib / Homebrew / compatible installs
             "/usr/local/lib/libfuse-t.dylib",
             "/usr/local/lib/libfuse.2.dylib",
             "/usr/local/lib/libfuse.dylib",

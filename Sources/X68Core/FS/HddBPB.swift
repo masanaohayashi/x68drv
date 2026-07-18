@@ -2,7 +2,7 @@ import Foundation
 
 /// Human68k HDD big-endian BPB (not MS-DOS compatible).
 ///
-/// Field layout from design.md / scsitools `write_boot_sector`.
+/// Field layout from design.md (BE BPB).
 public struct HddBPB: Equatable, Sendable {
     public var bytesPerSector: Int
     public var sectorsPerCluster: Int
@@ -39,7 +39,7 @@ public struct HddBPB: Equatable, Sendable {
         guard volume.count >= 0x26 else {
             throw X68Error.format("HDD volume too small for BE BPB")
         }
-        // Prefer scsitools offsets at +0x12.
+        // Prefer BE BPB offsets at +0x12.
         let bps = Int(try Endian.readUInt16BE(volume, at: 0x12))
         let spc = Int(volume[0x14])
         let fats = Int(volume[0x15])

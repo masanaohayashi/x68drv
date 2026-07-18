@@ -2,7 +2,7 @@ import Foundation
 import Darwin
 
 public enum MountBackend: String, Equatable, Sendable {
-    /// Live FUSE-T / macFUSE volume (shows under /Volumes).
+    /// Live FUSE-T volume (Finder volume).
     case fuse
     /// Materialize files under Application Support (fallback without FUSE).
     case snapshot
@@ -66,7 +66,7 @@ public final class MountService: @unchecked Sendable {
         FuseAvailability.probe(fileManager: fileManager)
     }
 
-    /// Mount image. Prefers FUSE when FUSE-T/macFUSE is present and helper runs;
+    /// Mount image. Prefers FUSE when FUSE-T is present and helper runs;
     /// otherwise uses snapshot export under Application Support.
     @discardableResult
     public func mount(

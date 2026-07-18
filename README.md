@@ -49,8 +49,8 @@ docs/                 # design, research, implementation plan
 
 ## Mount modes (dual backend)
 
-| FUSE-T / macFUSE | Behavior |
-|------------------|----------|
+| FUSE-T | Behavior |
+|--------|----------|
 | **Installed** | Live RO FUSE volume via bundled `x68mount-helper` (Finder shows volume name = image file; mountpoint under `~/Library/Application Support/x68drv/Volumes/`) |
 | **Not installed** | Temporary **snapshot folder** under Application Support (still works for copy-out) |
 

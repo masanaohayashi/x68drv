@@ -5,10 +5,10 @@
 | 日付 | 2026-07-18 |
 | 対象 | **0.1 Finder-mount RO**（書込なし） |
 | 規範 | [`design.md`](design.md)（特に Product Requirements / PRD-8） |
-| 調査 | [`format-entry-points.md`](format-entry-points.md)、[`disk-samples-verification.md`](disk-samples-verification.md) |
+| 調査 | [`disk-samples-verification.md`](disk-samples-verification.md)、[`design.md`](design.md) |
 
 > **原則**: 各フェーズは **テストを書いてから / と同時に** 実装する。フェーズ完了 = そのフェーズの検証チェックリストが全部 green。  
-> **禁止**: XM6 / MPX68K からのコード移植。オフセットと条件だけ仕様に落とす。
+> フォーマット仕様は docs に固定。実装は Swift 自前。
 
 ---
 
@@ -25,8 +25,8 @@ Phase 6  FUSE RO + Mode C + 取り出す  ★製品の核
 Phase 7  HDF 検証クラス + ローカル disk/ 回帰
 Phase 8  0.1 受け入れ（PRD-8）+ 配布メモ
 
-（バックログ）書込 Stage B+ / Sparkle / 追加フォーマット  
-（実装済・実験）**書込 Stage A**: `HddInject` + `x68drv-tool inject --write`（HDS/HDF ルートのみ。製品 FUSE 書込ではない。詳細は `docs/reference-difinder-write-path.md`）
+（バックログ）書込 Stage B+ / 自動更新 / 追加フォーマット  
+（実装済・実験）**書込 Stage A**: `HddInject` + `x68drv-tool inject --write`（HDS/HDF ルートのみ。製品 FUSE 書込ではない）
 ```
 
 ### 依存関係（簡略）
@@ -52,7 +52,7 @@ flowchart LR
 |------|--------|------|
 | **Unit** | XCTest / `swift test` | 各 Core タスクに必須 |
 | **Fixture 統合** | 合成イメージで list/read/export | Phase 2–4 |
-| **Oracle（任意 CI）** | scsitools / fathuman があれば diff | Phase 4/10 相当 |
+| **回帰（任意 CI）** | 合成・ゴールデンとの diff | Phase 4 相当 |
 | **Local golden** | `disk/`（gitignore・手動 or ローカル only ジョブ） | Phase 7 |
 | **UI 手動** | PRD-8 チェックリスト | Phase 5–6, 8 |
 | **FUSE 手動** | FUSE-T あり/なし 両マシン | Phase 6, 8 |
@@ -161,7 +161,7 @@ flowchart LR
 
 ### 参照
 
-- `format-entry-points.md` XDF  
+- XDF 仕様は design.md / 実測メモ  
 - `disk-samples-verification.md` §3  
 
 
@@ -215,7 +215,7 @@ flowchart LR
 | T4.3 | `ReadableVolume` list/read/export | ✅ |
 | T4.4 | fsck(RO): cycle / crossLink / shortChain | ✅ |
 | T4.5 | `x68drv-tool` detect/list/export/fsck | ✅ |
-| T4.6 | oracle vs scsitools | 未（任意・後回し） |
+| T4.6 | 外部ゴールデンとの比較 | 未（任意・後回し） |
 
 ### テスト（必須）
 
@@ -225,7 +225,7 @@ flowchart LR
 | U4.fsck_clean | 正常合成 | ✅ |
 | U4.fsck_dirty | cycle / shortChain | ✅ |
 | U4.unknown | 拒否 | ✅ |
-| I4.oracle | scsitools | 未 |
+| I4.regression | ゴールデン比較 | 未 |
 
 **Phase 4 完了**（2026-07-18）: `swift test` 35 tests pass。
 
@@ -313,7 +313,7 @@ flowchart LR
 |----|--------|----------|
 | T7.1 | 検出: 非 X68SCSI1 + `X68K`@0x400 + 物理 256 | ✅ |
 | T7.2 | start×256 → boot、BE BPB | ✅ `PartitionEntry.unitBytes` |
-| T7.3 | XM6 固定サイズは confidence high | ✅ |
+| T7.3 | SASI 典型固定サイズは confidence high | ✅ |
 | T7.4 | 未知クラス / HDS 誤分類しない | ✅ |
 | T7.5 | DiskImage + MountService 経由 | ✅ |
 
@@ -373,7 +373,7 @@ flowchart LR
 | B2 | FUSE 実験的書込 | クラッシュ注入・Finder rename |
 | B3 | 非 1232K フロッピー | ジオメトリ表 + テスト行列 |
 | B4 | HDF 他クラス | ゴールデン追加後のみ enable |
-| B5 | Sparkle 自動更新 | 署名更新フロー |
+| B5 | 自動更新 | 署名更新フロー |
 
 ---
 

@@ -26,16 +26,16 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 6. **取り出す** でアンマウント  
 7. マウント後は **Finder でフォルダを開き、ドラッグ&ドロップで Mac へコピー**できる  
 
-ターミナルは主 UI ではない。フォーマット解釈は `docs/` の調査メモに基づき **Swift で自前実装**（XM6/MPX68K は参照のみ・リポジトリ外）。
+ターミナルは主 UI ではない。フォーマット解釈は `docs/` の仕様・実測メモに基づき **Swift で自前実装**。
 
 ### 関連ドキュメント
 
 | 文書 | 内容 |
 |------|------|
 | [`README.md`](README.md) | ドキュメント索引 |
-| [`format-entry-points.md`](format-entry-points.md) | XM6/MPX68K の形式別 **入口関数**（移植禁止） |
 | [`disk-samples-verification.md`](disk-samples-verification.md) | 手元 `disk/` の **サイズ・マジック・BPB 実測** |
 | [`implementation-plan.md`](implementation-plan.md) | **実装フェーズ & タスクリスト**（テスト込み） |
+| [`distribution.md`](distribution.md) | 配布（Hardened Runtime + 公証） |
 
 ---
 
@@ -45,8 +45,8 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 
 1. **エミュレータ起動コスト**  
    ファイル 1 つを入れ替えるだけでもエミュレータ起動 → ディスクイメージ接続 → ホスト側へコピー、という手順が必要。
-2. **macOS 向けツールの欠如**  
-   デファクトの DiskExplorer は Windows 向け。Linux/Unix には `fathuman` / `dis68k`（フロッピー中心・読取中心）や `erique/scsitools`（HDS 向け Python）があるが、**macOS でマウントする体験**は提供されない。
+2. **macOS でイメージを Finder マウントする製品体験が無い**  
+   手元で Human68k イメージを「普通のディスク」として開き、コピーアウトしたい需要に応える。
 3. **フォーマットの非標準性**  
    Human68k のファイルシステムは MS-DOS FAT と「似て非なる」。特に:
    - **フロッピー（XDF/DIM）**: おおむね MS-DOS 互換の **little-endian BPB + FAT12**（1024 バイト/セクタ、18.3 名、Shift_JIS）
@@ -54,26 +54,12 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
    このため macOS の `hdiutil` や汎用 FAT ドライバでは両方を正しく扱えない。
 4. **マルチパーティション HDD**  
    SASI/SCSI イメージは最大 15 パーティション程度を持ち得る。パーティション選択 UX が必須。
-5. **書込ツールの破壊事例**  
-   コミュニティでは DiskExplorer 等によるイメージ破損の注意が共有されている。**当面 x68drv は書込を実装しない**が、将来書込を入れる場合は既定 OFF + preflight を厳しくする（後述の将来設計を参照）。
-6. **利用可能な一次資料（ユーザー環境・リポジトリ外）**  
-   - 実機/エミュ由来の **実ディスクイメージ**（ローカル `disk/` — `.gitignore`。研究スパイク・ゴールデン候補）  
-   - **XM6 2.06 ソース**（ローカル参照ツリー。リポジトリには含めない）— SASI/HDF 等のイメージ I/O・構造の参照  
-   - **MPX68K ソース**（同上）— px68k ベースの macOS アプリ。イメージ/フロッピー周り構造の参照  
+5. **書込のリスク**  
+   イメージへの直接書込は破損を招きやすい。**当面の製品経路は RO マウント + コピーアウト**。実験的 CLI inject は別経路（既定で危険操作として明示）。
+6. **検証用一次資料**  
+   - 実機/エミュ由来の **実ディスクイメージ**（ローカル `disk/` — `.gitignore`）  
+   - フォーマット仕様は本設計書と [`disk-samples-verification.md`](disk-samples-verification.md) に固定する  
 
-   > **参照専用ポリシー**: XM6 / MPX68K は **ディスクイメージのフォーマット・レイアウト・I/O 仕様を解析するためだけ**に使う。  
-   > **コードの移植・コピー・ライセンス混入を目的としない。** 実装は Swift の自前コード（X68Core）で行い、参照実装から得た知見は仕様・テスト・コメントに落とす。  
-   > 解析メモの正本は [docs 索引](README.md)。参照ツリー本体は git 管理外。
-
-### 現在の転送手段（先行事例）
-
-| 手段 | 特徴 | 制約 |
-|------|------|------|
-| DiskExplorer | GUI で HDS/HDF/XDF 等を直接編集 | Windows 中心。破損報告あり |
-| エミュレータ内ホスト FS | 実行時にホストと共有 | エミュレータ必須 |
-| `fathuman` / `dis68k` | XDF/DIM の list/extract | 書込・HDD 弱 |
-| `erique/scsitools` | HDS の pack/unpack/fsck/add | CLI のみ、Python |
-| Aaru (DiscImageChef) | パーティション検出の一部対応 | 2018 時点で Human68k HDD BPB 識別に課題があった経緯（[issue #173](https://github.com/aaru-dps/Aaru/issues/173)、当時 closed。**現行 Aaru の完成度は本設計では再検証しない**） |
 
 ---
 
@@ -86,7 +72,7 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 | G-XDF | **1232KB 2HD** の `.xdf` および `.dim` の **読取 / extract** | **v0.1 必須** |
 | G-HDS | `.hds`（SCSI / SxSI）の **読取・パーティション列挙 / extract** | **v0.1 必須** |
 | G-HDF-a | `.hdf`（SASI）の **レイアウトクラス検出と診断レポート** | v0.1（マウント成功は要求しない） |
-| G-HDF-b | 検証済みクラスの `.hdf` のみ **mount/extract 成功** | 実サンプル + XM6 ソース照合後、ゴールデン達成クラスから段階解放 |
+| G-HDF-b | 検証済みクラスの `.hdf` のみ **mount/extract 成功** | 実サンプル突合とゴールデン達成クラスから段階解放 |
 | G-FS | Human68k FS の正しい **読取**解釈（媒体クラス別 endian、18.3 名、Shift_JIS ⇔ UTF-8） | v0.1 |
 | G-APP | **一般的な macOS GUI `.app`** + **メニューバー常駐** + 終了 | **v0.1 必須** |
 | G-LAUNCH | **起動3モード**（対話起動 / ログイン silent / ドキュメント open） | **v0.1 必須** |
@@ -96,7 +82,7 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 | G-FUSE | **FUSE-T による RO マウントが製品本線** | **v0.1 必須**（未導入時は導入案内） |
 | G-BROWSE | FUSE 未導入時の **緊急 FO**（アプリ内一覧 + 書き出し） | v0.1 推奨（本線ではない） |
 | G-CLI | （任意）開発用。**製品の主経路ではない** | テスト用 |
-| G-TEST | ゴールデン + オラクル CI | 継続 |
+| G-TEST | ゴールデン + 回帰テスト | 継続 |
 | G-WRITE | イメージへの書込 | **0.1 非対象**（実験 Stage A: CLI `inject --write` のみ・製品 UI/FUSE 外） |
 
 ### Non-Goals（初期スコープ外） / 当面のスコープ境界
@@ -109,9 +95,7 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 - D88 / FDI 等の複雑コピープロテクト
 - **v0.1 の非 1232KB フロッピー** の完全サポート
 - エミュレータ本体・実機 SASI/SCSI
-- 出荷への Python/scsitools 同梱
 - 本格ディスクユーティリティ GUI（パーティション編集・低レベルフォーマット）
-- **XM6 / MPX68K からのコード移植**
 
 ---
 
@@ -270,7 +254,7 @@ x68drv
 | 性質 | **ヘッダなし raw セクタダンプ** |
 | **v0.1 サポートサイズ** | **1,261,568 バイト（1232 KB）** = 2HD のみを成功パスとする |
 | ジオメトリ（2HD） | 77 トラック × 2 面 × 8 セクタ × **1024 バイト/セクタ** |
-| FS | Human68k **FAT12 / little-endian**（MS-DOS 互換 BPB レイアウト。`fathuman`+FatFS が実証） |
+| FS | Human68k **FAT12 / little-endian**（MS-DOS 互換 BPB レイアウト） |
 | ブートセクタ | 先頭付近に `X68IPL` 系文字列が現れることが多い（検出の **ヒント**、必須ではない） |
 | メディア記述子 | フロッピーでは **0xFE**（2HD 系）が典型。検出の補助に使うが単独判定には使わない |
 | **手元実測** (`disk/`) | 3 本すべて 1,261,568。Disk2/OSR2 は LE BPB 正常（bps=1024, media=0xFE, root@0x1400）。Disk1 は Hudson ブートで BPB@0x0B 異常だが **同一ルート位置にディレクトリ痕跡** → **BPB 失敗時は 2HD 既定ジオメトリへフォールバック**を推奨。詳細: [`disk-samples-verification.md`](disk-samples-verification.md) §3 |
@@ -279,24 +263,23 @@ x68drv
 
 | 拡張子 | 概要 | v0.1 |
 |--------|------|------|
-| `.dim` | 先頭 **厳密に 256 バイト**ヘッダ。オフセット **`0xAB` から 11 バイト**が `"DIFC HEADER"`。以降は XDF 相当セクタ列。`fathuman` は一致時 `offset=256` | サポート |
+| `.dim` | 先頭 **厳密に 256 バイト**ヘッダ。オフセット **`0xAB` から 11 バイト**が `"DIFC HEADER"`。以降は XDF 相当セクタ列（一致時データ開始 `offset=256`） | サポート |
 | `.hdm` 等 | raw 2HD の別名として流通することがある | サイズ+BPB で XDF 相当として試行可 |
 | `.d88` | 可変長セクタ記述 | Non-Goal |
 | その他サイズ XDF | 2DD / 1.4MB 等 | 検出ヒントのみ。成功マウントは Phase 後 |
 
-参考: [vampirefrog/fathuman](https://github.com/vampirefrog/fathuman)、[waybeforenow/dis68k](https://github.com/waybeforenow/dis68k)
 
 ### 2. HDS（SCSI / SxSI）ハードディスクイメージ
 
-`erique/scsitools` の実装（特に README の Disk Layout、`scsiformat.py`、`fsck.py` の `info`/`check_scsi_header`/`parse_partition_table`/`parse_bpb`）を **規範的参照** とする。
+以下は **HDS（SxSI / SCSI 系）オンディスク・レイアウトの規範**（本プロジェクトの実装・テストの正本）。
 
 #### 規範: Record addressing
 
 ```text
-【Record addressing — scsitools fsck.py 準拠の解釈】
+【Record addressing】
 
 内部の正規単位:
-  LOGICAL_RECORD = 1024 bytes   # scsiformat.RECORD_SIZE
+  LOGICAL_RECORD = 1024 bytes   # LOGICAL_RECORD
   HOST_SECTOR    = 512 bytes    # fsck が raw read に使う単位
 
 バイトオフセット（固定・イメージ先頭から）:
@@ -309,11 +292,11 @@ x68drv
 ヘッダ解析アルゴリズム（check_scsi_header 相当）:
   1. buf[0..8) == b"X68SCSI1" でなければ SCSI ヘッダ無しとみなし 0 を返す（警告）
   2. bytes_per_record = BE16 @ 0x08
-       scsiformat はここへ 0x0200 (512) を書く。LOGICAL_RECORD はそれでも 1024。
+       実装・既存イメージではここへ 0x0200 (512) が書かれることが多い。LOGICAL_RECORD はそれでも 1024。
   3. disk_end_record = BE32 @ 0x0A + 1
   4. sxsi = (buf[0x2A..0x2E) == b"SxSI")
        ※ 0x2A は説明文字列内の部分一致（"This SCSI-UNIT format is 'SxSI' ..."）。
-       ※ scsiformat が書く説明文に "SxSI" が含まれるため、生成イメージでは true になり得る。
+       ※ 説明文に "SxSI" が含まれるイメージでは true になり得る。
        ※ sxsi == true のとき fsck は: disk_end_record <<= 1
   5. total_512_sectors = disk_end_record * (bytes_per_record // 512)
   6. パーティション表の start/count は「record 単位（1024B 系）」で格納され、
@@ -321,10 +304,10 @@ x68drv
 
 実装方針（x68drv）:
   - ディスク上の全オフセット計算は **1024 バイト record を正規座標** とする。
-  - 512 変換は scsitools 互換検証時と、bytes_per_record フィールドの解釈時のみ行う。
-  - flags @ 0x0E は scsiformat が 0x0100 を書くが、**現状セマンティクス未定義** → 保存のみ、分岐に使わない。
+  - 512 変換は bytes_per_record フィールドの解釈時のみ行う。
+  - flags @ 0x0E は 0x0100 が書かれる例があるが、**現状セマンティクス未定義** → 保存のみ、分岐に使わない。
   - `"SxSI"` @ 0x2A は **診断表示 + fsck 互換の end_record 補正**に使う。曖昧な「×2 スイッチ」と書かず、上記アルゴリズムをコードとテストで固定する。
-  - ゴールデン: scsitools `scsiformat.py` で生成したイメージを HDS vector とする。HDF は XM6 ソース + 実イメージで別途。
+  - ゴールデン: 合成 HDS および手元 `disk/` の実イメージ。HDF は実イメージ突合で別途。
 ```
 
 #### ディスク先頭レイアウト（バイトオフセット）
@@ -342,7 +325,7 @@ Offset 0x8000  (record 32)    パーティション 0 本体（典型・表の s
 | オフセット | 型 | 内容 |
 |------------|-----|------|
 | +0x00 | 8B | シグネチャ `"X68SCSI1"` |
-| +0x08 | BE16 | bytes per record フィールド（scsiformat は `0x0200`） |
+| +0x08 | BE16 | bytes per record フィールド（多くは `0x0200`） |
 | +0x0A | BE32 | 最終 record 番号（total_records − 1） |
 | +0x0E | BE16 | flags（`0x0100` を書く実装あり・意味は未定義扱い） |
 | +0x10 | 文字列 | 説明文 |
@@ -367,7 +350,7 @@ Offset 0x8000  (record 32)    パーティション 0 本体（典型・表の s
 
 #### パーティション内 BPB（Human68k HDD — big-endian）
 
-MS-DOS BPB と **互換ではない**。`scsiformat.py` `write_boot_sector` / `fsck.py` `parse_bpb` 準拠:
+MS-DOS BPB と **互換ではない**。実装・実測で用いるフィールド（BE）:
 
 | オフセット | 型 | 内容 |
 |------------|-----|------|
@@ -384,25 +367,21 @@ MS-DOS BPB と **互換ではない**。`scsiformat.py` `write_boot_sector` / `f
 
 容量目安: コミュニティでは HDS が **約 4GB まで**と語られることが多い。これは **当時のツール/エミュレータのソフト上限**であり、フォーマット上の絶対上限ではない（FAT16+SPC で理論上それ以上も構成可能）。x68drv はリソース上限（後述）で防護する。
 
-参考: [erique/scsitools](https://github.com/erique/scsitools)、[Aaru issue #173](https://github.com/aaru-dps/Aaru/issues/173)
 
-**手元実測** (`disk/System.HDS`, 200MB): magic `X68SCSI1`、BE16@+8=512、`X68K`@0x800、`Human68k` start=32 → boot@**0x8000**、BPB media **0xF7** / bps BE 1024 / spc 4。上記 scsitools モデルと一致。詳細: [`disk-samples-verification.md`](disk-samples-verification.md) §5。
+**手元実測** (`disk/System.HDS`, 200MB): magic `X68SCSI1`、BE16@+8=512、`X68K`@0x800、`Human68k` start=32 → boot@**0x8000**、BPB media **0xF7** / bps BE 1024 / spc 4。上記レイアウトと一致。詳細: [`disk-samples-verification.md`](disk-samples-verification.md) §5。
 
 ### 3. HDF（SASI）ハードディスクイメージ
 
 | 項目 | 調査結果 |
 |------|----------|
-| 用途 | XM6 等の **SASI** 固定ディスクイメージ |
-| XM6 open | `SASIHD::Open`: サイズ **10/20/40MB のみ**（`0x9f5400` / `0x13c9800` / `0x2793000`）、物理セクタ **256B**（`size>>8`） |
-| MPX68K | バッファ全体を 256B セクタ数として扱う（固定 3 サイズ制限なし） |
-| DiskExplorer | 「Human 68k HDD」と「Human 68k HDD SCSI」を区別して開く |
-| レイアウト | 単一の業界標準仕様は無いが、**手元 + XM6 で 1 クラスを確定**（下記） |
+| 用途 | **SASI** 系固定ディスクイメージ |
+| レイアウト | 単一の業界標準仕様は無いが、**手元実測で 1 クラスを確定**（下記） |
 
 #### 検証済みクラス（2026-07-18 · 手元 `HD.hdf` / `HD2.hdf`）
 
 | クラス ID | 内容 | マウント |
 |-----------|------|---------|
-| **`hdf-sasi-x68k-256`** | ヘッダ無し。物理 **256B**。`X68K` @ **0x400**（LBA4×256）。`Human68k` start は **物理 LBA**（×256 で boot）。FS は BE BPB（boot+0x12 に bps=1024）。XM6 40MB サイズと一致するサンプル 2 本 | **G-HDF-b 第一候補**（extract/mount 可にする） |
+| **`hdf-sasi-x68k-256`** | ヘッダ無し。物理 **256B**。`X68K` @ **0x400**（LBA4×256）。`Human68k` start は **物理 LBA**（×256 で boot）。FS は BE BPB（boot+0x12 に bps=1024）。40MB 級サンプル 2 本で確認 | **G-HDF-b 第一候補**（extract/mount 可にする） |
 | `hdf-unknown` | 上記以外 | **検出レポートのみ** |
 
 #### 未検証クラス（残仮説）
@@ -411,14 +390,13 @@ MS-DOS BPB と **互換ではない**。`scsiformat.py` `write_boot_sector` / `f
 |-----------|------|------|
 | `hdf-sxsi` | `X68SCSI1` を持つ SASI 名義ファイル | 手元に無し |
 | `hdf-raw-bpb` | 先頭が即 Human68k BE ブートのみ | 手元に無し |
-| 非 10/20/40MB SASI | MPX68K は開けるが XM6 は拒否 | 未検証 |
+| 非 10/20/40MB SASI | エミュレータによって扱いが異なる可能性 | 未検証 |
 
-**記録の正本**: [`disk-samples-verification.md`](disk-samples-verification.md) §4、入口: [`format-entry-points.md`](format-entry-points.md)。
+**記録の正本**: [`disk-samples-verification.md`](disk-samples-verification.md) §4、入口: [`disk-samples-verification.md`](disk-samples-verification.md)。
 
 **研究スパイク（継続）**:
 
 1. 他サイズ HDF・他クラスの有無を実サンプルで表にする（市販コンテンツはリポジトリに置かない）
-2. XM6 / MPX68K は **参照専用**（移植禁止）
 3. 強制 `--format` は読取用。書込は当面無し
 
 ### 4. Human68k ファイルシステム
@@ -427,10 +405,10 @@ MS-DOS BPB と **互換ではない**。`scsiformat.py` `write_boot_sector` / `f
 
 | 媒体クラス | 判定トリガ | BPB フィールド | FAT 幅 | FAT エントリ endian | ディレクトリ time/date | cluster / size |
 |------------|------------|----------------|--------|---------------------|------------------------|----------------|
-| **Floppy**（XDF/DIM） | イメージ種別 = Xdf/Dim、または単一 LE ボリューム | **LE**（MS-DOS 互換オフセット） | **FAT12** | **LE** | **LE**（DOS 互換）※実装は fathuman/FatFS 準拠で検証 | **LE** |
+| **Floppy**（XDF/DIM） | イメージ種別 = Xdf/Dim、または単一 LE ボリューム | **LE**（MS-DOS 互換オフセット） | **FAT12** | **LE** | **LE**（DOS 互換） | **LE** |
 | **HDD volume**（HDS/SxSI パーティション、および BE 系 HDF） | パーティション上 BPB、`0x60` 先頭 + media `0xF7` + bps=1024 BE | **BE**（§2 表） | **FAT16**（既定） | **BE** | **BE** | **LE**（混合） |
 
-> **重要**: 「Human68k = 常に BE BPB」は誤り。**HDD パーティションが BE、フロッピーは LE** が先行実装（fathuman vs scsitools）と整合する。
+> **重要**: 「Human68k = 常に BE BPB」は誤り。**HDD パーティションが BE、フロッピーは LE**。
 
 ##### `Human68kFs::open` のモード選択
 
@@ -443,7 +421,7 @@ MS-DOS BPB と **互換ではない**。`scsiformat.py` `write_boot_sector` / `f
 4. クラスタ数・FAT サイズから妥当性チェック:
      - clusters < 4085 かつ Floppy → FAT12 確定寄り
      - HDD で FAT テーブルが 12bit 解釈の方が一貫する場合のみ警告
-5. 手動 override（scsitools 互換）:
+5. 手動 override:
      --fat-width 12|16
      --fat-endian be|le
      --bpb-endian be|le
@@ -454,7 +432,7 @@ MS-DOS BPB と **互換ではない**。`scsiformat.py` `write_boot_sector` / `f
 
 #### ディレクトリエントリ（32 バイト）
 
-**HDD（scsitools）および書込パスの規範**（フロッピーは FatFS 互換レイアウトで検証し差分があれば表に追記）:
+**HDD および書込パスの規範**（フロッピーは LE FAT12 レイアウトで検証し差分があれば表に追記）:
 
 | オフセット | サイズ | エンディアン | 内容 |
 |------------|--------|--------------|------|
@@ -471,15 +449,15 @@ MS-DOS BPB と **互換ではない**。`scsiformat.py` `write_boot_sector` / `f
 - 長い名前: VFAT LFN（属性 0x0F）ではなく **fileName2**
 - ボリュームラベル: attr `0x08`。`readdir` では **既定で隠す**。`xattr com.x68drv.volume_label` または `info` で表示
 
-##### ファイル名パッキング規範（inject 時 — scsitools `parse_human68k_filename` 相当）
+##### ファイル名パッキング規範（inject 時）
 
 1. UTF-8 → cp932。失敗したら書込拒否（置換オプション明示時のみ `?` 等）
 2. 最後の `.` で name / ext 分割（name 空はエラー）
 3. name は最大 18 **SJIS バイト**、ext 最大 3。超過はエラー
-4. **DBCS 境界**: name を 8 バイト枠に入れるとき、**第 8 バイトが SJIS リードバイトで終わらない**ようにする。リードバイトで切れる場合は 7 バイトで打ち切り残りを fileName2 へ（実装は scsitools と同様にバイト列操作し、テストで `表` など 2 バイト文字を境界に置く）
+4. **DBCS 境界**: name を 8 バイト枠に入れるとき、**第 8 バイトが SJIS リードバイトで終わらない**ようにする。リードバイトで切れる場合は 7 バイトで打ち切り残りを fileName2 へ（テストで `表` など 2 バイト文字を境界に置く）
 5. name[0..8) 空白パディング、name2 は余剰 + NUL パディング、ext 空白パディング
 6. 先頭バイト 0xE5 → 0x05 に置換して格納
-7. **大文字化**: scsitools の add パスは ASCII `a-z` を upper する実装あり。x68drv は **書込時 ASCII のみ upper**、読取は **case-preserving 表示 + lookup は ASCII 範囲のみ case-fold**（A-Z/a-z）。全角の case-fold はしない
+7. **大文字化**: x68drv は **書込時 ASCII のみ upper**、読取は **case-preserving 表示 + lookup は ASCII 範囲のみ case-fold**（A-Z/a-z）。全角の case-fold はしない
 8. 比較: name8+name2+ext のパディング込みバイト列を、ASCII 範囲のみ upper して比較
 9. 末尾空白・末尾ドット: ホスト名から除去してからエンコード。ディスク上の空白パディングは表示時 strip
 
@@ -662,9 +640,6 @@ $ x68mount --all game.hds /Volumes/x68
 > **【当面の実装方針（Rev.4 / ユーザー決定）】**  
 > **v0.1 および近接リリースでは書込パスを実装しない。** 提供するのはメニューバー UI・RO マウント（任意）・アプリ内ブラウザ / ホストへの書き出しのみ。  
 > 以下の write-back / コミット順序 / Phase 3 要件は **将来実装時に再設計しなくてよいよう残した仕様メモ**であり、0.1 の完了条件ではない。  
->  
-> **既存実装の調査（移植禁止）:** ホスト側で Human68k 書込を行っている [DiFinder](https://github.com/bml3mk5/DiFinder) / [L3DiskEx](https://github.com/bml3mk5/L3DiskEx) の仕組みは  
-> [`reference-difinder-write-path.md`](reference-difinder-write-path.md) に整理した。delete 順序など **本節の規範と差がある箇所は本節を優先**する。
 
 **「journaling」という語は用いない。** 将来実装する際の実態は write-back キャッシュと **定義されたコミット順序** による best-effort 一貫性である。クラッシュ時の完全 ACID は保証しない。
 
@@ -758,7 +733,7 @@ create と同様: ディレクトリ初期クラスタ data → FAT#1 → FAT#2 
 | バックエンド | 導入 | リンク |
 |--------------|------|--------|
 | **FUSE-T（既定）** | `brew install macos-fuse-t/homebrew-cask/fuse-t` | `pkg-config` が fuse-t の libfuse を指すことを README に固定。`fuser` クレート |
-| macFUSE（代替） | 公式 DMG / brew | 同一ソース。CI はどちらか一方でコンパイル確認 |
+| 互換 libfuse（任意） | システムに存在する libfuse 系 | 検出できれば利用。製品推奨は FUSE-T |
 | FSKit（macOS 26+） | FUSE-T 経由の将来パス | 0.1 では非必須（KD-2） |
 
 #### スレッド / 可変性
@@ -967,7 +942,7 @@ v0.1 で cp を省略し extract のみでも可。
 
 ### `x68mount --doctor` / `x68drv doctor`
 
-1. FUSE-T または macFUSE のライブラリ検出  
+1. FUSE-T（または互換 libfuse）のライブラリ検出  
 2. サンプル loopback マウント試行（オプション）  
 3. TCC「Network Volumes」注意の表示（FUSE-T）  
 4. 指定イメージがあれば detect-only + partition 一覧  
@@ -1020,7 +995,7 @@ erDiagram
 
 ### ホスト側メタデータ（任意）
 
-`scsitools` 互換 `.x68k_meta`（extract 時）をサポート。
+extract 時のメタ情報ファイル（`.x68k_meta`）をサポートする場合がある。
 
 ---
 
@@ -1031,7 +1006,6 @@ erDiagram
 | 方式 | 利点 | 欠点 | 判定 |
 |------|------|------|------|
 | **1. FUSE-T** | kext 不要、Homebrew、Apple Silicon | Network Volumes 権限、意味論差 | **推奨（既定）** |
-| **2. macFUSE** | 実績 | kext / 配布困難。FSKit 化の途上 | 代替ビルド |
 | **3. hdiutil + raw** | 標準のみ | FS 非対応 | **不採用** |
 | **4. CLI のみ** | 依存最小 | 最終ゴールと不一致 | **副次（テスト用）** |
 | **5. 9P/SMB エクスポート** | リモート | 過剰 | 将来 |
@@ -1097,7 +1071,7 @@ erDiagram
 
 ### バックログ（0.1 後）
 
-4. G-HDF-b 拡大、Sparkle、最近使った項目の強化  
+4. G-HDF-b 拡大、自動更新、最近使った項目の強化  
 5. 将来書込（イメージへの inject）— deferred  
 6. （任意）Rust core  
 
@@ -1114,16 +1088,16 @@ erDiagram
 | KD-3 | **起動3モード**（A 設定 / B silent / C document） | ユーザー決定 Rev.6 |
 | KD-4 | **既定 RO**。イメージへの書込は当面しない | 破損リスク。コピーは host へ |
 | KD-5 | **Human68k FS を Swift で自前実装** | LE/BE |
-| KD-6 | **HDS は scsitools 規範** | 実証済み |
+| KD-6 | **HDS は本設計の SxSI レイアウト規範** | 実証済み |
 | KD-7 | **HDF は検証クラスのみマウント** | 誤マウント防止 |
 | KD-8 | **cp932 ⇔ UTF-8** | 相互運用 |
 | KD-9 | **マウント既定 partition 0** | Finder の筋記憶 |
 | KD-10 | ライセンス **MIT のみ** | ユーザー決定 |
 | KD-11 | 内部 `HumanPath` | 曖昧な path 記法を避ける |
 | KD-12 | **VolumeClass 自動 + override** | 逃げ道 |
-| KD-13 | scsitools 一致は **テスト目標** | 過剰拘束を避ける |
+| KD-13 | 合成・実イメージとの一致は **テスト目標** | 過剰拘束を避ける |
 | KD-14 | （将来書込）ordered write-back | 当面未実装 |
-| KD-15 | 時刻は **ローカル TZ** | scsitools 同様 |
+| KD-15 | 時刻は **ローカル TZ** | |
 | KD-16 | 製品 **`x68drv.app`** + helper バンドル内 | ユーザー向けは .app |
 | KD-17 | v0.1 フロッピーは **1232KB のみ** | スコープ |
 | KD-18 | 出荷物に Python を含めない | メンテ境界 |
@@ -1158,14 +1132,14 @@ erDiagram
 
 ### ゴールデン
 
-- 自作のみ（著作権）。XDF/HDS は **Swift 合成** または CI で scsitools subprocess  
+- 自作のみ（著作権）。XDF/HDS は **Swift 合成**  
 - 実機由来（`disk/` 配下など）はローカル検証用。市販ダンプを公開リポジトリに置かない  
 
 ### ピラミッド
 
 1. XCTest ユニット: endian BPB 両系、FAT12/16、dir、SJIS  
 2. 統合: export（イメージ→ホスト）  
-3. オラクル CI: scsitools / fathuman  
+3. 回帰 CI: 合成イメージ + 可能な範囲の実イメージ  
 4. UI: **PRD-8 シナリオ**の手動チェックリスト（Mode A/B/C）  
 5. FUSE: macOS 手動（FUSE-T 導入マシン + 未導入マシン）  
 6. ドキュメント open: 拡張子ごとダブルクリック  
@@ -1184,7 +1158,7 @@ erDiagram
 | ID | 内容 | 状態 |
 |----|------|------|
 | OQ1 | HDF 各クラスの実分布と必要ゴールデン | **部分解決**: 手元は **`hdf-sasi-x68k-256`**（40MB×2）を確定。他クラス・他サイズは Open。記録: `disk-samples-verification.md` |
-| OQ2 | DiskExplorer HDD と SASI/SCSI 差 | **Open** — OQ1 の残りと同時。HDS 側は `System.HDS` で scsitools モデル確認済 |
+| OQ2 | SASI/SCSI 差の残課題 | **Open** — OQ1 の残りと同時。HDS 側は `System.HDS` でレイアウト確認済 |
 | OQ3 | 非 1232K フロッピー | **Resolved for v0.1** |
 | OQ4 | Finder 書込時 rename | **Deferred** |
 | OQ5 | アプリ名 / バンドル ID | **Lean**: 表示名 `x68drv`。bundle id `tokyo.studio-r.x68drv` |
@@ -1245,7 +1219,7 @@ erDiagram
 - **依存**: PR-06, PR-08
 
 ### PR-10: オラクル CI
-- **タイトル**: `ci: compare extract against scsitools/fathuman`
+- **タイトル**: `ci: compare extract against golden fixtures`
 - **依存**: PR-09
 - **内容**: runner にツールが無ければ skip
 
@@ -1260,9 +1234,9 @@ erDiagram
 - **内容**: Mode C、マウントポイント、Finder open、取り出す、FUSE 未導入アラート。**PRD-8 の中核**
 
 ### PR-13: HDF 検出
-- **タイトル**: `feat(core): HDF classification using XM6 + real samples`
+- **タイトル**: `feat(core): HDF classification using real samples`
 - **依存**: PR-07, PR-08
-- **内容**: 第一クラス **`hdf-sasi-x68k-256`**（`disk-samples-verification.md`）。`xm6_206s`/`MPX68K` は参照のみ。未知クラスは検出のみ
+- **内容**: 第一クラス **`hdf-sasi-x68k-256`**（`disk-samples-verification.md`）。未知クラスは検出のみ
 
 ### PR-14: 配布
 - **タイトル**: `chore(release): notarized .app zip / dmg notes`
@@ -1283,33 +1257,10 @@ erDiagram
 
 ## References
 
-### フォーマット・FS
+- 本リポジトリ `docs/design.md` / `docs/disk-samples-verification.md` — フォーマット規範と実測
+- [FUSE-T](https://www.fuse-t.org/) — 製品本線のユーザー空間マウント
+- Apple Human Interface Guidelines — Document-based / menu bar アプリ
 
-- [erique/scsitools](https://github.com/erique/scsitools) — HDS 規範（README Disk Layout、`scsiformat.py`、`fsck.py`）
-- **XM6 2.06 ソース** — SASI/HDF 等の **仕様解析用参照**（移植しない・**リポジトリ外**）
-- **MPX68K** — px68k 系 macOS アプリ。イメージ構造の **仕様解析用参照**（移植しない・**リポジトリ外**）
-- **ドキュメント索引**: [`README.md`](README.md)
-- **入口マップ**: [`format-entry-points.md`](format-entry-points.md) — XM6/MPX68K 入口関数（参照専用・移植禁止）
-- **実イメージ突合**: [`disk-samples-verification.md`](disk-samples-verification.md) — `disk/` 6 本の実測（2026-07-18）
-- ユーザー保有の **実イメージ (`disk/`)** — ローカル検証用（市販ダンプの公開同梱はしない）
-- [vampirefrog/fathuman](https://github.com/vampirefrog/fathuman)
-- [waybeforenow/dis68k](https://github.com/waybeforenow/dis68k)
-- [Aaru issue #173](https://github.com/aaru-dps/Aaru/issues/173) — 歴史的 BPB 議論（現行実装は未再検証）
-- [Wikipedia: FAT — Human68K 18.3](https://en.wikipedia.org/wiki/File_Allocation_Table)
-- [elm-chan FatFs](http://elm-chan.org/fsw/ff/00index_e.html) — テスト参照用
-
-### コミュニティ
-
-- [GameSX: formatting a hard drive](https://gamesx.com/wiki/doku.php?id=x68000:formatting_a_hard_drive)
-- [GameSX: SxSI disk image](https://gamesx.com/wiki/doku.php?id=x68000:sxsi_disk_image_with_games_and_lots_of_mdx_files)
-
-### macOS FUSE
-
-- [FUSE-T](https://www.fuse-t.org/) / [macos-fuse-t/fuse-t](https://github.com/macos-fuse-t/fuse-t)
-- [macFUSE](https://macfuse.github.io/)
-- SwiftUI [`MenuBarExtra`](https://developer.apple.com/documentation/swiftui/menubarextra)
-
----
 
 ## 付録 A: 実装チェックリスト
 
@@ -1359,11 +1310,10 @@ sequenceDiagram
 | Draft Rev.1 | 初版 |
 | Draft Rev.2 | レビュー 21 件対応: endian 表、write-back、HDF 二段階、FUSE 契約、magic-first、record 規範、既定 p0、CLI 行列、HumanPath、lock、limits、PR 再編、KD 拡充、OQ 解決 |
 | Draft Rev.3 | 再レビュー 4 件: create コミット順を data→FAT→dir に修正、PR 番号参照の整合、FUSE 書込フラグ統一、cp 方向規則 |
-| **Accepted Rev.4** | ユーザー決定: **MIT のみ**；**当面 RO+extract のみ**（書込 PR deferred）；HDF 調査に **実 HDF + XM6 2.06 (`xm6_206s`)**；状態を Accepted for RO-first implementation に |
+| **Accepted Rev.4** | ユーザー決定: **MIT のみ**；**当面 RO+extract のみ**（書込 PR deferred）；HDF 調査に **実 HDF**；状態を Accepted for RO-first implementation に |
 | **Accepted Rev.5** | 最終ゴールを **メニューバー .app** に変更。**Swift 第一 / Rust 一本不採用**。CLI は副次。FUSE 非必須 + アプリ内ブラウザ FO。PR 計画を .app 中心に再編 |
-| **Rev.5.1** | `xm6_206s` / `MPX68K` を **参照専用**（移植禁止）と明記。仕様解析・codebase-memory インデックス対象 |
 | **Rev.5.2** | 入口マップ・`disk/` 実測を `docs/` に記録。HDF クラス **`hdf-sasi-x68k-256`** を確定。design 調査 §1–3 と OQ1 を実測で更新 |
-| **Rev.5.3** | 参照ツリー `MPX68K` / `xm6_206s` と `disk/` をリポジトリ外（`.gitignore`）。ドキュメントのみ初期 commit |
+| **Rev.5.3** | `disk/` をリポジトリ外（`.gitignore`）。ドキュメントのみ初期 commit |
 | **Rev.5.4** | `design.md` をリポジトリルートから **`docs/design.md`** へ移動 |
 | **Rev.6** | **Product Requirements**: 通常 GUI、起動3モード、Finder ダブルクリックで RO マウント、取り出す、設定最小 UI、FUSE-T 本線。LSUIElement 方針を撤回（KD-20） |
 

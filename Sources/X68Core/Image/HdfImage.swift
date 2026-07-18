@@ -13,7 +13,7 @@ public final class HdfImage: @unchecked Sendable {
     public let layoutClass: HdfLayoutClass
     public let partitions: [PartitionEntry]
 
-    /// XM6 classic fixed sizes (bytes).
+    /// Classic SASI fixed sizes (bytes).
     public static let xm6FixedSizes: Set<Int> = [
         0x9F_5400, // 10MB
         0x13C_9800, // 20MB

@@ -8,7 +8,7 @@ import FuseBridge
 /// Usage:
 ///   x68mount-helper <image> <mountpoint> [--partition N] [fuse options...]
 ///
-/// Requires FUSE-T or macFUSE at runtime (libfuse via dlopen).
+/// Requires FUSE-T (or compatible libfuse) at runtime (via dlopen).
 @main
 enum X68MountHelper {
     static func main() {

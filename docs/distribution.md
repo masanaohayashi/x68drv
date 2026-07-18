@@ -122,7 +122,7 @@ spctl -a -vv "$APP"   # may fail until notarized
 
 | Key | Why |
 |-----|-----|
-| `com.apple.security.cs.disable-library-validation` | Load FUSE-T / macFUSE signed by another team |
+| `com.apple.security.cs.disable-library-validation` | Load system FUSE-T framework signed by another team |
 
 **No** App Sandbox keys. Do not enable App Sandbox for this product.
 
