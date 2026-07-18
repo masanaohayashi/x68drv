@@ -44,20 +44,36 @@ public struct SxSIHeader: Equatable, Sendable {
 /// One X68K partition table entry (16 bytes).
 public struct PartitionEntry: Equatable, Sendable {
     public var name: String
-    /// Start in **1024-byte logical records** from image start.
+    /// Start index in `unitBytes` units from image start.
     public var startRecord: UInt32
     public var recordCount: UInt32
+    /// HDS uses 1024; SASI HDF (`hdf-sasi-x68k-256`) uses 256.
+    public var unitBytes: Int
 
-    public var bootOffset: Int { Int(startRecord) * SxSIHeader.logicalRecord }
+    public var bootOffset: Int { Int(startRecord) * unitBytes }
+    public var byteLength: Int { Int(recordCount) * unitBytes }
+
+    public init(name: String, startRecord: UInt32, recordCount: UInt32, unitBytes: Int = SxSIHeader.logicalRecord) {
+        self.name = name
+        self.startRecord = startRecord
+        self.recordCount = recordCount
+        self.unitBytes = unitBytes
+    }
 }
 
 public enum PartitionTable {
     public static let magic = Data("X68K".utf8)
-    /// Default location for 512-byte physical LBA4 → 0x800.
+    /// Default location for 512-byte physical LBA4 → 0x800 (HDS).
     public static let defaultOffset = 0x800
+    /// SASI HDF: LBA4 × 256 = 0x400.
+    public static let hdfSasiOffset = 0x400
     public static let maxEntries = 15
 
-    public static func parse(data: Data, at offset: Int = defaultOffset) throws -> [PartitionEntry] {
+    public static func parse(
+        data: Data,
+        at offset: Int = defaultOffset,
+        unitBytes: Int = SxSIHeader.logicalRecord
+    ) throws -> [PartitionEntry] {
         guard data.count >= offset + 4 else {
             throw X68Error.format("Partition table out of range")
         }
@@ -77,7 +93,12 @@ public enum PartitionTable {
             let count = try Endian.readUInt32BE(data, at: o + 12)
             if start == 0 && count == 0 { break }
             if !name.isEmpty {
-                entries.append(PartitionEntry(name: name, startRecord: start, recordCount: count))
+                entries.append(PartitionEntry(
+                    name: name,
+                    startRecord: start,
+                    recordCount: count,
+                    unitBytes: unitBytes
+                ))
             }
             o += 16
         }

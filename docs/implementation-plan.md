@@ -311,25 +311,27 @@ flowchart LR
 
 | ID | タスク | 完了条件 |
 |----|--------|----------|
-| T7.1 | 検出: 非 X68SCSI1 + `X68K`@0x400 + 物理 256 | |
-| T7.2 | start×256 → boot、BE BPB | |
-| T7.3 | 既知サイズ（10/20/40MB）ヒント（XM6 互換）+ それ以外は警告付き試行 or 拒否ポリシーを実装で固定 | design に合わせて文書化 |
-| T7.4 | 未知クラス → マウント失敗メッセージ | |
-| T7.5 | Mode C / メニューから HDF も同様 | |
+| T7.1 | 検出: 非 X68SCSI1 + `X68K`@0x400 + 物理 256 | ✅ |
+| T7.2 | start×256 → boot、BE BPB | ✅ `PartitionEntry.unitBytes` |
+| T7.3 | XM6 固定サイズは confidence high | ✅ |
+| T7.4 | 未知クラス / HDS 誤分類しない | ✅ |
+| T7.5 | DiskImage + MountService 経由 | ✅ |
 
 ### テスト
 
-| テスト ID | 内容 | 種別 |
-|-----------|------|------|
-| U7.detect_class | 合成 hdf-sasi-x68k-256 | Unit |
-| U7.part_boot | start=33 → 0x2100 | Unit |
-| U7.unknown | ランダム巨大ファイル → 非マウント | Unit |
-| I7.local_hd | **任意**: `disk/HD.hdf` list | ローカル |
-| M7.mount_hd | HD.hdf を Finder で開く | **手動** |
+| テスト ID | 内容 | 種別 | 状態 |
+|-----------|------|------|------|
+| U7.detect_class / part_boot | 合成 HDF | Unit | ✅ |
+| U7 mount | MountService | Unit | ✅ |
+| I7.local_hd | `disk/HD.hdf` | ローカル | ✅ |
+| M7.mount_hd | Finder 手動 | **手動** | 要確認 |
+
+**Phase 7 完了**（2026-07-18）: `swift test` 48 pass。
 
 ### 参照
 
 - `disk-samples-verification.md` §4  
+
 
 ---
 

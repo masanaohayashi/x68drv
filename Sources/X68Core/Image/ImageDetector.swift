@@ -49,12 +49,18 @@ public enum ImageDetector {
             )
         }
 
-        // HDF heuristic: no SCSI magic but size looks like SASI fixed or has X68K@0x400
+        // HDF: headerless SASI with X68K partition table at 0x400 (256-byte LBA4)
         if size >= 0x404, Data(data[0x400..<0x404]) == Data("X68K".utf8) {
             evidence.append("magic:X68K@0x400")
+            evidence.append("class:hdf-sasi-x68k-256")
+            if HdfImage.xm6FixedSizes.contains(size) {
+                evidence.append("size:xm6-fixed")
+            }
+            let confidence: DetectionResult.Confidence =
+                HdfImage.xm6FixedSizes.contains(size) ? .high : .medium
             return DetectionResult(
                 kind: .hdf,
-                confidence: .medium,
+                confidence: confidence,
                 evidence: evidence,
                 volumeOffset: 0,
                 size: size

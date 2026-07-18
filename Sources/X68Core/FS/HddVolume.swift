@@ -15,7 +15,7 @@ public final class HddVolume: @unchecked Sendable {
         let start = partition.bootOffset
         let end: Int
         if partition.recordCount > 0 {
-            end = min(imageData.count, start + Int(partition.recordCount) * SxSIHeader.logicalRecord)
+            end = min(imageData.count, start + partition.byteLength)
         } else {
             end = imageData.count
         }

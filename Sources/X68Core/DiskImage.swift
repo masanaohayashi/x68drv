@@ -35,9 +35,8 @@ public struct DiskImage: Sendable {
             let hds = try HdsImage(data: data)
             return try hds.openVolume(index: partitionIndex)
         case .hdf:
-            throw X68Error.unsupported(
-                "HDF open not enabled in this build (Phase 7); class detection only"
-            )
+            let hdf = try HdfImage(data: data)
+            return try hdf.openVolume(index: partitionIndex)
         case .unknown:
             throw X68Error.unsupported("Unknown disk image format")
         }
@@ -50,7 +49,9 @@ public struct DiskImage: Sendable {
             return 1
         case .hds:
             return try HdsImage(data: data).partitions.count
-        case .hdf, .unknown:
+        case .hdf:
+            return try HdfImage(data: data).partitions.count
+        case .unknown:
             return 0
         }
     }
@@ -59,9 +60,17 @@ public struct DiskImage: Sendable {
         switch detection.kind {
         case .hds:
             return try HdsImage(data: data).partitions
+        case .hdf:
+            return try HdfImage(data: data).partitions
         default:
             return []
         }
+    }
+
+    /// HDF layout class when kind is `.hdf`.
+    public func hdfLayoutClass() -> HdfLayoutClass? {
+        guard detection.kind == .hdf else { return nil }
+        return HdfImage.classify(data: data)
     }
 }
 
