@@ -135,31 +135,34 @@ flowchart LR
 
 | ID | タスク | 完了条件 |
 |----|--------|----------|
-| T2.1 | ImageDetector: DIM magic @0xAB、size hint 1232K | 検出結果 struct |
-| T2.2 | LE BPB パース + **失敗時 2HD 既定フォールバック** | Disk1 型でもルート到達可 |
-| T2.3 | FAT12 LE チェーン読取（ループ/上限） | 悪意 FAT で hang しない |
-| T2.4 | ルート/サブdir readdir、ファイル read | |
-| T2.5 | `export(path, to: URL)` ホストへ書き出し | バイト一致 |
-| T2.6 | 非 1232K XDF は明確エラー | |
+| T2.1 | ImageDetector: DIM magic @0xAB、size hint 1232K | ✅ |
+| T2.2 | LE BPB パース + **失敗時 2HD 既定フォールバック** | ✅ |
+| T2.3 | FAT12 LE チェーン読取（ループ/上限） | ✅ |
+| T2.4 | ルート readdir、ファイル read（subdir もパス対応） | ✅ |
+| T2.5 | `export(path, to: URL)` ホストへ書き出し | ✅ |
+| T2.6 | 非 1232K XDF は明確エラー | ✅ |
 
 ### テスト（必須）
 
-| テスト ID | 内容 |
-|-----------|------|
-| U2.detect_xdf | 合成 1232K → kind=xdf |
-| U2.detect_dim | 合成 DIM → offset=256 |
-| U2.list_synth | 合成上に置いた `HELLO.TXT` が一覧に出る |
-| U2.read_synth | 内容一致 |
-| U2.export_synth | export 後ホストファイル一致 |
-| U2.fallback_bpb | BPB ゴミ + 標準 2HD レイアウトにルートがある合成 → list 成功 |
-| U2.reject_size | size≠1232K → error |
-| U2.fat_cycle | 循環 FAT → error / 上限 |
-| I2.local_osr2 | **任意・ローカル**: `disk/OSR2.xdf` に `HUMAN.SYS` 相当が見える（CI skip） |
+| テスト ID | 内容 | 状態 |
+|-----------|------|------|
+| U2.detect_xdf | 合成 1232K → kind=xdf | ✅ |
+| U2.detect_dim | 合成 DIM → offset=256 | ✅ |
+| U2.list_synth | `HELLO.TXT` 一覧 | ✅ |
+| U2.read_synth | 内容一致 | ✅ |
+| U2.export_synth | export バイト一致 | ✅ |
+| U2.fallback_bpb | BPB 壊れ + 2HD FO | ✅ |
+| U2.reject_size | size≠1232K | ✅ |
+| U2.fat_cycle | 循環 FAT | ✅ |
+| I2.local_osr2 | `disk/OSR2.xdf`（あれば） | ✅ ローカル pass |
+
+**Phase 2 完了**（2026-07-18）: `FloppyVolume` + detector。`swift test` 24 tests pass。
 
 ### 参照
 
 - `format-entry-points.md` XDF  
 - `disk-samples-verification.md` §3  
+
 
 ---
 
