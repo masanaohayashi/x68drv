@@ -122,6 +122,12 @@ public final class WritableHddSession: @unchecked Sendable {
         return try volume.fsck()
     }
 
+    public func spaceInfo() throws -> VolumeSpaceInfo {
+        lock.lock()
+        defer { lock.unlock() }
+        return try volume.spaceInfo()
+    }
+
     // MARK: - Write ops
 
     /// Create empty file or overwrite with contents (inject ordered flush).

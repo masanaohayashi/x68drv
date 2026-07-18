@@ -178,6 +178,16 @@ func x68_swift_truncate(_ path: UnsafePointer<CChar>?, _ size: off_t) -> Int32 {
     FuseSession.shared.truncatePath(path, size: size)
 }
 
+@_cdecl("x68_swift_statfs")
+func x68_swift_statfs(
+    _ blockSize: UnsafeMutablePointer<UInt64>?,
+    _ blocks: UnsafeMutablePointer<UInt64>?,
+    _ bfree: UnsafeMutablePointer<UInt64>?,
+    _ bavail: UnsafeMutablePointer<UInt64>?
+) -> Int32 {
+    FuseSession.shared.statfs(blockSize, blocks, bfree, bavail)
+}
+
 // MARK: - Session
 
 final class FuseSession: @unchecked Sendable {
@@ -214,6 +224,7 @@ final class FuseSession: @unchecked Sendable {
             x68_swift_read,
             x68_swift_release
         )
+        x68_fuse_set_statfs_callback(x68_swift_statfs)
     }
 
     func installWritable(session: WritableHddSession) {
@@ -232,6 +243,7 @@ final class FuseSession: @unchecked Sendable {
             x68_swift_mkdir,
             x68_swift_truncate
         )
+        x68_fuse_set_statfs_callback(x68_swift_statfs)
     }
 
     private func humanPath(from posix: String) -> HumanPath {
@@ -259,6 +271,43 @@ final class FuseSession: @unchecked Sendable {
             return try session.readFile(path: path)
         case .none:
             throw X68Error.io("No volume")
+        }
+    }
+
+    fileprivate func statfs(
+        _ blockSize: UnsafeMutablePointer<UInt64>?,
+        _ blocks: UnsafeMutablePointer<UInt64>?,
+        _ bfree: UnsafeMutablePointer<UInt64>?,
+        _ bavail: UnsafeMutablePointer<UInt64>?
+    ) -> Int32 {
+        guard let blockSize, let blocks, let bfree, let bavail else { return -EIO }
+        do {
+            let info: VolumeSpaceInfo
+            switch backend {
+            case .readOnly(let vol):
+                info = try vol.spaceInfo()
+            case .writable(let session):
+                info = try session.spaceInfo()
+            case .none:
+                return -EIO
+            }
+            // Ensure Finder never sees "0 free" when capacity exists but count failed open.
+            let bsz = max(info.blockSize, 1)
+            var total = info.totalBlocks
+            var free = info.freeBlocks
+            if total == 0, free == 0 {
+                // Fallback: report a large soft quota so copy-in is not blocked by UI alone
+                // (actual inject still enforces FAT free). Prefer real FAT numbers above.
+                total = 1_048_576 // 1M blocks × 1K ≈ 1 GiB soft
+                free = isWritable ? total : 0
+            }
+            blockSize.pointee = bsz
+            blocks.pointee = total
+            bfree.pointee = free
+            bavail.pointee = isWritable ? free : 0
+            return 0
+        } catch {
+            return mapError(error)
         }
     }
 

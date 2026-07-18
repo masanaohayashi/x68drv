@@ -23,6 +23,7 @@ static x68_create_fn g_create;
 static x68_unlink_fn g_unlink;
 static x68_mkdir_fn g_mkdir;
 static x68_truncate_fn g_truncate;
+static x68_statfs_fn g_statfs;
 
 struct filler_pack {
     fuse_fill_dir_t filler;
@@ -55,6 +56,10 @@ void x68_fuse_set_write_callbacks(
     g_unlink = unlink_fn;
     g_mkdir = mkdir_fn;
     g_truncate = truncate_fn;
+}
+
+void x68_fuse_set_statfs_callback(x68_statfs_fn statfs_fn) {
+    g_statfs = statfs_fn;
 }
 
 int x68_fuse_add_direntry(void *filler_ctx, const char *name) {
@@ -143,6 +148,26 @@ static int op_ftruncate(const char *path, off_t size, struct fuse_file_info *fi)
     return op_truncate(path, size);
 }
 
+static int op_statfs(const char *path, struct statvfs *stbuf) {
+    (void)path;
+    if (!g_statfs || !stbuf) return -EIO;
+    uint64_t bsize = 0, blocks = 0, bfree = 0, bavail = 0;
+    int rc = g_statfs(&bsize, &blocks, &bfree, &bavail);
+    if (rc != 0) return rc;
+    memset(stbuf, 0, sizeof(*stbuf));
+    stbuf->f_bsize = (unsigned long)(bsize ? bsize : 1024);
+    stbuf->f_frsize = stbuf->f_bsize;
+    stbuf->f_blocks = (fsblkcnt_t)blocks;
+    stbuf->f_bfree = (fsblkcnt_t)bfree;
+    stbuf->f_bavail = (fsblkcnt_t)bavail;
+    /* File-count limits are soft; Human68k has no inode table. */
+    stbuf->f_files = 100000;
+    stbuf->f_ffree = 100000;
+    stbuf->f_favail = 100000;
+    stbuf->f_namemax = 255;
+    return 0;
+}
+
 static struct fuse_operations x68_ops = {
     .getattr = op_getattr,
     .readdir = op_readdir,
@@ -155,6 +180,7 @@ static struct fuse_operations x68_ops = {
     .mkdir = op_mkdir,
     .truncate = op_truncate,
     .ftruncate = op_ftruncate,
+    .statfs = op_statfs,
 };
 
 static void try_load_fuse_libs(void) {

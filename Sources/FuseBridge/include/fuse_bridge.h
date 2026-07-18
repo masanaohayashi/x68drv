@@ -21,6 +21,13 @@ typedef int (*x68_create_fn)(const char *path, mode_t mode, uint64_t *out_fh);
 typedef int (*x68_unlink_fn)(const char *path);
 typedef int (*x68_mkdir_fn)(const char *path, mode_t mode);
 typedef int (*x68_truncate_fn)(const char *path, off_t size);
+/** Fills *block_size, *blocks, *bfree, *bavail (block counts). Return 0 or -errno. */
+typedef int (*x68_statfs_fn)(
+    uint64_t *block_size,
+    uint64_t *blocks,
+    uint64_t *bfree,
+    uint64_t *bavail
+);
 
 /** Register Swift/C callbacks. Call before x68_fuse_run. */
 void x68_fuse_set_callbacks(
@@ -30,6 +37,9 @@ void x68_fuse_set_callbacks(
     x68_read_fn read_fn,
     x68_release_fn release_fn
 );
+
+/** Optional. Without it Finder often shows 0 free and refuses copy-in. */
+void x68_fuse_set_statfs_callback(x68_statfs_fn statfs_fn);
 
 /** Optional write ops. NULL → EROFS. Call after set_callbacks when experimental-write. */
 void x68_fuse_set_write_callbacks(

@@ -87,4 +87,21 @@ final class WritableHddSessionTests: XCTestCase {
         let xdf = try SyntheticXDF.makeEmpty2HD()
         XCTAssertThrowsError(try WritableHddSession(imageData: xdf))
     }
+
+    /// Finder copy-in needs non-zero free space via FAT free-cluster count.
+    func testSpaceInfoReportsFreeClusters() throws {
+        let base = try SyntheticHDS.makeMinimal()
+        let session = try WritableHddSession(imageData: base)
+        let space = try session.spaceInfo()
+        XCTAssertGreaterThan(space.blockSize, 0)
+        XCTAssertGreaterThan(space.totalBlocks, 0)
+        XCTAssertGreaterThan(space.freeBlocks, 0)
+        XCTAssertGreaterThan(space.freeBytes, 0)
+
+        // Use some space; free should drop (or stay if empty file).
+        let payload = Data(repeating: 0x55, count: Int(space.blockSize) * 2)
+        try session.writeFile(path: HumanPath(display: "BIG.BIN"), contents: payload)
+        let after = try session.spaceInfo()
+        XCTAssertLessThan(after.freeBlocks, space.freeBlocks)
+    }
 }

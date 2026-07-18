@@ -59,6 +59,21 @@ public struct FAT16BE: Sendable {
         return result
     }
 
+    /// Count free data clusters (cluster indices 2...maxClusters with value 0).
+    public func countFreeClusters() throws -> Int {
+        guard maxClusters >= 2 else { return 0 }
+        var n = 0
+        for c in 2...maxClusters {
+            if try entry(cluster: c) == Self.free { n += 1 }
+        }
+        return n
+    }
+
+    /// Number of addressable data clusters (indices 2...maxClusters inclusive).
+    public var dataClusterCount: Int {
+        max(0, maxClusters - 1)
+    }
+
     /// Allocate a chain of `count` free clusters; last entry = EOF.
     /// Returns the list of clusters (length `count`).
     public mutating func allocateChain(count: Int) throws -> [Int] {

@@ -89,6 +89,17 @@ public final class HddVolume: @unchecked Sendable {
         )
     }
 
+    public func spaceInfo() throws -> VolumeSpaceInfo {
+        let free = try fat.countFreeClusters()
+        let total = fat.dataClusterCount
+        let bpc = UInt64(max(1, bpb.bytesPerCluster))
+        return VolumeSpaceInfo(
+            blockSize: bpc,
+            totalBlocks: UInt64(max(0, total)),
+            freeBlocks: UInt64(max(0, free))
+        )
+    }
+
     /// Expose FAT table for endian negative tests.
     public var fatTableForTesting: Data {
         let fatStart = bpb.reservedSectors * bpb.bytesPerSector
