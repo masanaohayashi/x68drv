@@ -173,7 +173,12 @@ trap cleanup_notes EXIT
 cat >"$NOTES" <<EOF
 ## x68drv ${VERSION}
 
-macOS menu-bar app to mount X68000 disk images (\`.xdf\` / \`.hds\` / \`.hdf\` / \`.dim\`) read-only.
+macOS menu-bar app to mount X68000 disk images (\`.xdf\` / \`.hds\` / \`.hdf\` / \`.dim\`) in Finder.
+
+### Highlights
+- **Experimental write mount** (Settings, off by default) for HDS/HDF/XDF/DIM via FUSE-T
+- Creates \`.x68drv-bak\` on first change; eject from the **menu bar** after writing
+- Free-space reporting, Finder DnD permissions fix, more reliable eject
 
 ### Download
 - **${ZIP_NAME}** — notarized \`.app\` (unzip and open)
@@ -185,6 +190,7 @@ macOS menu-bar app to mount X68000 disk images (\`.xdf\` / \`.hds\` / \`.hdf\` /
 ### Notes
 - Hardened Runtime + Developer ID notarization (not Mac App Store / not App Sandbox)
 - Double-click a disk image or use **Open Image…** from the menu bar
+- Write path is experimental — prefer copies of images before enabling write mount
 EOF
 
 GH_ARGS=(release create "$TAG" "$ZIP_PATH" --repo "$REPO" --title "x68drv ${VERSION}" --notes-file "$NOTES")
