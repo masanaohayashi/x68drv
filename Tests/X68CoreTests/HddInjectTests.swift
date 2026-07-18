@@ -125,6 +125,51 @@ final class HddInjectTests: XCTestCase {
         )
     }
 
+    /// Stage C: mkdir then inject into subdirectory; list/read/fsck.
+    func testMkdirAndInjectIntoSubdir() throws {
+        let base = try SyntheticHDS.makeMinimal()
+        let part = try HdsImage(data: base).partitions[0]
+
+        let (withDir, mk) = try HddInject.mkdir(
+            imageData: base,
+            partition: part,
+            parentPath: HumanPath(),
+            name: HumanFileName(stem: "SUB", ext: "")
+        )
+        XCTAssertEqual(mk.remoteName.uppercased(), "SUB")
+        XCTAssertGreaterThanOrEqual(mk.firstCluster, 2)
+
+        let payload = Data("in-subdir".utf8)
+        let (withFile, inj) = try HddInject.injectFile(
+            imageData: withDir,
+            partition: part,
+            path: HumanPath(display: "SUB/NEST.TXT"),
+            contents: payload,
+            overwrite: false
+        )
+        XCTAssertEqual(inj.remoteName.uppercased(), "SUB/NEST.TXT")
+
+        let vol = try HdsImage(data: withFile).openVolume()
+        let root = try vol.list()
+        XCTAssertTrue(root.contains(where: { $0.isDirectory && $0.name.stem.uppercased() == "SUB" }))
+        let nested = try vol.list(path: HumanPath(display: "SUB"))
+        XCTAssertTrue(nested.contains(where: { $0.name.display.uppercased() == "NEST.TXT" }))
+        XCTAssertEqual(
+            try vol.readFile(path: HumanPath(display: "SUB/NEST.TXT")),
+            payload
+        )
+        XCTAssertTrue(try vol.fsck().isClean)
+
+        let (afterDel, _) = try HddInject.deleteFile(
+            imageData: withFile,
+            partition: part,
+            path: HumanPath(display: "SUB/NEST.TXT")
+        )
+        let vol2 = try HdsImage(data: afterDel).openVolume()
+        XCTAssertTrue(try vol2.list(path: HumanPath(display: "SUB")).isEmpty)
+        XCTAssertTrue(try vol2.fsck().isClean)
+    }
+
     func testFAT16AllocateChain() throws {
         // Minimal table: clusters 0..5
         var table = Data(count: 12)

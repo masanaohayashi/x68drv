@@ -20,6 +20,10 @@ enum X68drvTool {
             try runDelete(Array(args.dropFirst(2)))
             return
         }
+        if cmd == "mkdir" {
+            try runMkdir(Array(args.dropFirst(2)))
+            return
+        }
 
         guard args.count >= 3 else {
             printUsage()
@@ -123,45 +127,22 @@ enum X68drvTool {
         }
         let imageURL = URL(fileURLWithPath: positional[0])
         let hostURL = URL(fileURLWithPath: positional[1])
-        let remote = HumanFileName(display: positional[2])
+        let remote = HumanPath(display: positional[2])
         let part = positional.count >= 4 ? (Int(positional[3]) ?? 0) : 0
 
-        // Preflight fsck (clean required).
-        let disk = try DiskImage.open(url: imageURL)
-        let vol = try disk.openVolume(partitionIndex: part)
-        let report = try vol.fsck()
-        if !report.isClean {
-            fputs("fsck not clean; refusing inject:\n", stderr)
-            for issue in report.issues {
-                fputs("  \(issue.kind.rawValue)\t\(issue.path)\t\(issue.message)\n", stderr)
-            }
-            exit(1)
-        }
+        try requireClean(imageURL: imageURL, partition: part, action: "inject")
 
-        let result = try HddInject.injectRootFileToURL(
+        let result = try HddInject.injectFileToURL(
             imageURL: imageURL,
             partitionIndex: part,
             hostFileURL: hostURL,
-            remoteName: remote,
+            remotePath: remote,
             overwrite: overwrite
         )
         print(
             "injected \(result.remoteName) bytes=\(result.bytesWritten) cluster0=\(result.firstCluster) clusters=\(result.clusterCount) overwrite=\(result.overwritten)"
         )
-
-        // Postflight
-        let disk2 = try DiskImage.open(url: imageURL)
-        let vol2 = try disk2.openVolume(partitionIndex: part)
-        let report2 = try vol2.fsck()
-        if report2.isClean {
-            print("fsck: clean")
-        } else {
-            fputs("warning: fsck dirty after inject\n", stderr)
-            for issue in report2.issues {
-                fputs("  \(issue.kind.rawValue)\t\(issue.path)\t\(issue.message)\n", stderr)
-            }
-            exit(1)
-        }
+        try postflightFsck(imageURL: imageURL, partition: part)
     }
 
     /// Stage B: experimental root-file delete on HDS/HDF.
@@ -196,35 +177,94 @@ enum X68drvTool {
             exit(2)
         }
         let imageURL = URL(fileURLWithPath: positional[0])
-        let remote = HumanFileName(display: positional[1])
+        let remote = HumanPath(display: positional[1])
         let part = positional.count >= 3 ? (Int(positional[2]) ?? 0) : 0
 
+        try requireClean(imageURL: imageURL, partition: part, action: "delete")
+
+        let result = try HddInject.deleteFileToURL(
+            imageURL: imageURL,
+            partitionIndex: part,
+            remotePath: remote
+        )
+        print("deleted \(result.remoteName) freedClusters=\(result.freedClusters)")
+        try postflightFsck(imageURL: imageURL, partition: part)
+    }
+
+    /// Stage C: create directory (parent/name or just name under root).
+    ///
+    ///     x68drv-tool mkdir --write <image> <DIR> [partition]
+    ///     x68drv-tool mkdir --write <image> <PARENT/DIR> [partition]
+    private static func runMkdir(_ args: [String]) throws {
+        var write = false
+        var positional: [String] = []
+        for a in args {
+            switch a {
+            case "--write": write = true
+            default:
+                if a.hasPrefix("-") {
+                    fputs("unknown mkdir flag: \(a)\n", stderr)
+                    exit(2)
+                }
+                positional.append(a)
+            }
+        }
+        guard write else {
+            fputs(
+                "mkdir refuses to run without --write (experimental; may destroy the image)\n",
+                stderr
+            )
+            exit(2)
+        }
+        guard positional.count >= 2 else {
+            fputs(
+                "usage: x68drv-tool mkdir --write <image> <DIR|PARENT/DIR> [partition]\n",
+                stderr
+            )
+            exit(2)
+        }
+        let imageURL = URL(fileURLWithPath: positional[0])
+        let path = HumanPath(display: positional[1])
+        guard let name = path.components.last else {
+            fputs("mkdir: empty directory name\n", stderr)
+            exit(2)
+        }
+        let parent = HumanPath(components: Array(path.components.dropLast()))
+        let part = positional.count >= 3 ? (Int(positional[2]) ?? 0) : 0
+
+        try requireClean(imageURL: imageURL, partition: part, action: "mkdir")
+        let result = try HddInject.mkdirToURL(
+            imageURL: imageURL,
+            partitionIndex: part,
+            parentPath: parent,
+            name: name
+        )
+        print("mkdir \(result.remoteName) cluster=\(result.firstCluster)")
+        try postflightFsck(imageURL: imageURL, partition: part)
+    }
+
+    private static func requireClean(imageURL: URL, partition: Int, action: String) throws {
         let disk = try DiskImage.open(url: imageURL)
-        let vol = try disk.openVolume(partitionIndex: part)
+        let vol = try disk.openVolume(partitionIndex: partition)
         let report = try vol.fsck()
         if !report.isClean {
-            fputs("fsck not clean; refusing delete:\n", stderr)
+            fputs("fsck not clean; refusing \(action):\n", stderr)
             for issue in report.issues {
                 fputs("  \(issue.kind.rawValue)\t\(issue.path)\t\(issue.message)\n", stderr)
             }
             exit(1)
         }
+    }
 
-        let result = try HddInject.deleteRootFileToURL(
-            imageURL: imageURL,
-            partitionIndex: part,
-            remoteName: remote
-        )
-        print("deleted \(result.remoteName) freedClusters=\(result.freedClusters)")
-
-        let disk2 = try DiskImage.open(url: imageURL)
-        let vol2 = try disk2.openVolume(partitionIndex: part)
-        let report2 = try vol2.fsck()
-        if report2.isClean {
+    private static func postflightFsck(imageURL: URL, partition: Int) throws {
+        let disk = try DiskImage.open(url: imageURL)
+        let vol = try disk.openVolume(partitionIndex: partition)
+        let report = try vol.fsck()
+        if report.isClean {
             print("fsck: clean")
         } else {
-            fputs("warning: fsck dirty after delete\n", stderr)
-            for issue in report2.issues {
+            fputs("warning: fsck dirty after write\n", stderr)
+            for issue in report.issues {
                 fputs("  \(issue.kind.rawValue)\t\(issue.path)\t\(issue.message)\n", stderr)
             }
             exit(1)
@@ -241,10 +281,11 @@ enum X68drvTool {
               x68drv-tool fsck <image> [partition]
               x68drv-tool mount <image> [partition]
               x68drv-tool eject-all
-              x68drv-tool inject --write [--overwrite] <image> <host-file> <NAME.EXT> [partition]
-                (experimental: HDS/HDF root inject; copy the image first)
-              x68drv-tool delete --write <image> <NAME.EXT> [partition]
-                (experimental Stage B: HDS/HDF root file delete)
+              x68drv-tool inject --write [--overwrite] <image> <host-file> <PATH> [partition]
+                (experimental HDS/HDF; PATH may be NAME.EXT or DIR/NAME.EXT)
+              x68drv-tool delete --write <image> <PATH> [partition]
+              x68drv-tool mkdir --write <image> <DIR|PARENT/DIR> [partition]
+                (copy the image first — no automatic backup)
 
             """,
             stderr
