@@ -5,7 +5,7 @@
 | 日付 | 2026-07-18 |
 | 対象ディレクトリ | `disk/`（ローカル検証用。市販ダンプの公開同梱はしない） |
 | 突合相手 | XM6 / MPX68K 入口条件（[format-entry-points.md](format-entry-points.md)） |
-| 設計書 | [../design.md](../design.md) 調査結果 §1–3 を本結果で更新 |
+| 設計書 | [design.md](design.md) 調査結果 §1–3 を本結果で更新 |
 
 > 目的: 入口マップの条件が **実ファイルで通るか** を記録する。  
 > 方法: ファイルサイズ、先頭マジック、`X68K` / `Human68k` 位置、BPB 候補オフセットの静的解析。
@@ -252,5 +252,5 @@ X  6  8  K     H  u  m  a  n  6  8  k  ... start=0x20 ...
 ## 9. 関連リンク
 
 - 入口関数: [format-entry-points.md](format-entry-points.md)  
-- 設計書: [../design.md](../design.md)  
+- 設計書: [design.md](design.md)  
 - 索引: [README.md](README.md)

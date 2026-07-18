@@ -4,7 +4,7 @@
 
 | 文書 | 内容 |
 |------|------|
-| [../design.md](../design.md) | 製品設計（メニューバー .app、Goals、PR 計画、Key Decisions） |
+| [design.md](design.md) | 製品設計（メニューバー .app、Goals、PR 計画、Key Decisions） |
 | [format-entry-points.md](format-entry-points.md) | XM6 / MPX68K における **HDF・HDS・XDF の入口関数マップ**（移植禁止・仕様抽出のみ） |
 | [disk-samples-verification.md](disk-samples-verification.md) | 手元 `disk/` サンプルの **実測突合結果**（サイズ・マジック・パーティション・BPB） |
 
@@ -26,5 +26,5 @@
 ## 方針メモ
 
 - エミュコードは **読んでオフセットと条件を取るだけ**。x68drv 本体へコピーしない。
-- フォーマット仕様の正本は `design.md` の調査セクション + 本ディレクトリの突合メモ。
+- フォーマット仕様の正本は [`design.md`](design.md) の調査セクション + 本ディレクトリの突合メモ。
 - 実装は Swift（X68Core + メニューバーアプリ）。

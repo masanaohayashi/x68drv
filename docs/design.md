@@ -5,7 +5,7 @@
 | 文書名 | x68drv Design Document |
 | 著者 | （リポジトリオーナー） |
 | 日付 | 2026-07-18 |
-| 改訂 | 2026-07-18 Rev.5.3（参照ツリーを repo 外） |
+| 改訂 | 2026-07-18 Rev.5.4（design.md を docs/ へ） |
 | 状態 | **Accepted for menu-bar RO-first** |
 | リポジトリ | `/Users/ring2/Documents/src/x68drv` |
 | 対象 OS | macOS 13+ 推奨（MenuBarExtra）。下限は macOS 12 検討可。Apple Silicon / Intel |
@@ -33,9 +33,9 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 
 | 文書 | 内容 |
 |------|------|
-| [`docs/README.md`](docs/README.md) | ドキュメント索引 |
-| [`docs/format-entry-points.md`](docs/format-entry-points.md) | XM6/MPX68K の形式別 **入口関数**（移植禁止） |
-| [`docs/disk-samples-verification.md`](docs/disk-samples-verification.md) | 手元 `disk/` の **サイズ・マジック・BPB 実測** |
+| [`README.md`](README.md) | ドキュメント索引 |
+| [`format-entry-points.md`](format-entry-points.md) | XM6/MPX68K の形式別 **入口関数**（移植禁止） |
+| [`disk-samples-verification.md`](disk-samples-verification.md) | 手元 `disk/` の **サイズ・マジック・BPB 実測** |
 
 ---
 
@@ -63,7 +63,7 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 
    > **参照専用ポリシー**: XM6 / MPX68K は **ディスクイメージのフォーマット・レイアウト・I/O 仕様を解析するためだけ**に使う。  
    > **コードの移植・コピー・ライセンス混入を目的としない。** 実装は Swift の自前コード（X68Core）で行い、参照実装から得た知見は仕様・テスト・コメントに落とす。  
-   > 解析メモの正本は [`docs/`](docs/README.md)。参照ツリー本体は git 管理外。
+   > 解析メモの正本は [docs 索引](README.md)。参照ツリー本体は git 管理外。
 
 ### 現在の転送手段（先行事例）
 
@@ -125,7 +125,7 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 | FS | Human68k **FAT12 / little-endian**（MS-DOS 互換 BPB レイアウト。`fathuman`+FatFS が実証） |
 | ブートセクタ | 先頭付近に `X68IPL` 系文字列が現れることが多い（検出の **ヒント**、必須ではない） |
 | メディア記述子 | フロッピーでは **0xFE**（2HD 系）が典型。検出の補助に使うが単独判定には使わない |
-| **手元実測** (`disk/`) | 3 本すべて 1,261,568。Disk2/OSR2 は LE BPB 正常（bps=1024, media=0xFE, root@0x1400）。Disk1 は Hudson ブートで BPB@0x0B 異常だが **同一ルート位置にディレクトリ痕跡** → **BPB 失敗時は 2HD 既定ジオメトリへフォールバック**を推奨。詳細: [`docs/disk-samples-verification.md`](docs/disk-samples-verification.md) §3 |
+| **手元実測** (`disk/`) | 3 本すべて 1,261,568。Disk2/OSR2 は LE BPB 正常（bps=1024, media=0xFE, root@0x1400）。Disk1 は Hudson ブートで BPB@0x0B 異常だが **同一ルート位置にディレクトリ痕跡** → **BPB 失敗時は 2HD 既定ジオメトリへフォールバック**を推奨。詳細: [`disk-samples-verification.md`](disk-samples-verification.md) §3 |
 
 **関連フォーマット**
 
@@ -238,7 +238,7 @@ MS-DOS BPB と **互換ではない**。`scsiformat.py` `write_boot_sector` / `f
 
 参考: [erique/scsitools](https://github.com/erique/scsitools)、[Aaru issue #173](https://github.com/aaru-dps/Aaru/issues/173)
 
-**手元実測** (`disk/System.HDS`, 200MB): magic `X68SCSI1`、BE16@+8=512、`X68K`@0x800、`Human68k` start=32 → boot@**0x8000**、BPB media **0xF7** / bps BE 1024 / spc 4。上記 scsitools モデルと一致。詳細: [`docs/disk-samples-verification.md`](docs/disk-samples-verification.md) §5。
+**手元実測** (`disk/System.HDS`, 200MB): magic `X68SCSI1`、BE16@+8=512、`X68K`@0x800、`Human68k` start=32 → boot@**0x8000**、BPB media **0xF7** / bps BE 1024 / spc 4。上記 scsitools モデルと一致。詳細: [`disk-samples-verification.md`](disk-samples-verification.md) §5。
 
 ### 3. HDF（SASI）ハードディスクイメージ
 
@@ -265,7 +265,7 @@ MS-DOS BPB と **互換ではない**。`scsiformat.py` `write_boot_sector` / `f
 | `hdf-raw-bpb` | 先頭が即 Human68k BE ブートのみ | 手元に無し |
 | 非 10/20/40MB SASI | MPX68K は開けるが XM6 は拒否 | 未検証 |
 
-**記録の正本**: [`docs/disk-samples-verification.md`](docs/disk-samples-verification.md) §4、入口: [`docs/format-entry-points.md`](docs/format-entry-points.md)。
+**記録の正本**: [`disk-samples-verification.md`](disk-samples-verification.md) §4、入口: [`format-entry-points.md`](format-entry-points.md)。
 
 **研究スパイク（継続）**:
 
@@ -1030,7 +1030,7 @@ erDiagram
 
 | ID | 内容 | 状態 |
 |----|------|------|
-| OQ1 | HDF 各クラスの実分布と必要ゴールデン | **部分解決**: 手元は **`hdf-sasi-x68k-256`**（40MB×2）を確定。他クラス・他サイズは Open。記録: `docs/disk-samples-verification.md` |
+| OQ1 | HDF 各クラスの実分布と必要ゴールデン | **部分解決**: 手元は **`hdf-sasi-x68k-256`**（40MB×2）を確定。他クラス・他サイズは Open。記録: `disk-samples-verification.md` |
 | OQ2 | DiskExplorer HDD と SASI/SCSI 差 | **Open** — OQ1 の残りと同時。HDS 側は `System.HDS` で scsitools モデル確認済 |
 | OQ3 | 非 1232K フロッピー | **Resolved for v0.1** |
 | OQ4 | Finder 書込時 rename | **Deferred** |
@@ -1047,8 +1047,8 @@ erDiagram
 各 PR は独立レビュー可能。製品の主線は **.app**。
 
 ### PR-01: リポジトリ骨格
-- **タイトル**: `chore: bootstrap Xcode/SPM workspace and design.md`
-- **対象**: `Package.swift` または Xcode プロジェクト、`README.md`、`design.md`、**`LICENSE`（MIT）**、CI `swift test`
+- **タイトル**: `chore: bootstrap Xcode/SPM workspace and docs`
+- **対象**: `Package.swift` または Xcode プロジェクト、`README.md`、`docs/`（本設計書含む）、**`LICENSE`（MIT）**、CI `swift test`
 - **依存**: なし
 
 ### PR-02: Core 基礎型
@@ -1107,7 +1107,7 @@ erDiagram
 ### PR-13: HDF 検出
 - **タイトル**: `feat(core): HDF classification using XM6 + real samples`
 - **依存**: PR-07, PR-08
-- **内容**: 第一クラス **`hdf-sasi-x68k-256`**（`docs/disk-samples-verification.md`）。`xm6_206s`/`MPX68K` は参照のみ。未知クラスは検出のみ
+- **内容**: 第一クラス **`hdf-sasi-x68k-256`**（`disk-samples-verification.md`）。`xm6_206s`/`MPX68K` は参照のみ。未知クラスは検出のみ
 
 ### PR-14: 配布
 - **タイトル**: `chore(release): notarized .app zip / dmg notes`
@@ -1133,9 +1133,9 @@ erDiagram
 - [erique/scsitools](https://github.com/erique/scsitools) — HDS 規範（README Disk Layout、`scsiformat.py`、`fsck.py`）
 - **XM6 2.06 ソース** — SASI/HDF 等の **仕様解析用参照**（移植しない・**リポジトリ外**）
 - **MPX68K** — px68k 系 macOS アプリ。イメージ構造の **仕様解析用参照**（移植しない・**リポジトリ外**）
-- **ドキュメント索引**: [`docs/README.md`](docs/README.md)
-- **入口マップ**: [`docs/format-entry-points.md`](docs/format-entry-points.md) — XM6/MPX68K 入口関数（参照専用・移植禁止）
-- **実イメージ突合**: [`docs/disk-samples-verification.md`](docs/disk-samples-verification.md) — `disk/` 6 本の実測（2026-07-18）
+- **ドキュメント索引**: [`README.md`](README.md)
+- **入口マップ**: [`format-entry-points.md`](format-entry-points.md) — XM6/MPX68K 入口関数（参照専用・移植禁止）
+- **実イメージ突合**: [`disk-samples-verification.md`](disk-samples-verification.md) — `disk/` 6 本の実測（2026-07-18）
 - ユーザー保有の **実イメージ (`disk/`)** — ローカル検証用（市販ダンプの公開同梱はしない）
 - [vampirefrog/fathuman](https://github.com/vampirefrog/fathuman)
 - [waybeforenow/dis68k](https://github.com/waybeforenow/dis68k)
@@ -1209,6 +1209,7 @@ sequenceDiagram
 | **Rev.5.1** | `xm6_206s` / `MPX68K` を **参照専用**（移植禁止）と明記。仕様解析・codebase-memory インデックス対象 |
 | **Rev.5.2** | 入口マップ・`disk/` 実測を `docs/` に記録。HDF クラス **`hdf-sasi-x68k-256`** を確定。design 調査 §1–3 と OQ1 を実測で更新 |
 | **Rev.5.3** | 参照ツリー `MPX68K` / `xm6_206s` と `disk/` をリポジトリ外（`.gitignore`）。ドキュメントのみ初期 commit |
+| **Rev.5.4** | `design.md` をリポジトリルートから **`docs/design.md`** へ移動 |
 
 ---
 
