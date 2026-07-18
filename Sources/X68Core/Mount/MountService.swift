@@ -15,6 +15,8 @@ public struct MountRecord: Equatable, Identifiable, Sendable {
     public var partitionIndex: Int
     public var backend: MountBackend
     public var displayName: String
+    /// True when FUSE was started with `--experimental-write` (HDS/HDF only).
+    public var experimentalWrite: Bool
 
     public init(
         id: UUID = UUID(),
@@ -22,7 +24,8 @@ public struct MountRecord: Equatable, Identifiable, Sendable {
         mountURL: URL,
         partitionIndex: Int,
         backend: MountBackend,
-        displayName: String
+        displayName: String,
+        experimentalWrite: Bool = false
     ) {
         self.id = id
         self.sourceURL = sourceURL
@@ -30,6 +33,7 @@ public struct MountRecord: Equatable, Identifiable, Sendable {
         self.partitionIndex = partitionIndex
         self.backend = backend
         self.displayName = displayName
+        self.experimentalWrite = experimentalWrite
     }
 }
 
@@ -68,11 +72,16 @@ public final class MountService: @unchecked Sendable {
 
     /// Mount image. Prefers FUSE when FUSE-T is present and helper runs;
     /// otherwise uses snapshot export under Application Support.
+    ///
+    /// - Parameter experimentalWrite: When true, starts FUSE with
+    ///   `--experimental-write` (HDS/HDF only; mutates the image). Does **not**
+    ///   fall back to a read-only snapshot — fails if FUSE/write cannot run.
     @discardableResult
     public func mount(
         url: URL,
         partitionIndex: Int = 0,
-        preferFuse: Bool = true
+        preferFuse: Bool = true,
+        experimentalWrite: Bool = false
     ) throws -> MountRecord {
         lock.lock()
         defer { lock.unlock() }
@@ -92,6 +101,17 @@ public final class MountService: @unchecked Sendable {
         let disk = try DiskImage.open(url: standardized)
         _ = try disk.openVolume(partitionIndex: partitionIndex)
 
+        if experimentalWrite {
+            switch disk.detection.kind {
+            case .hds, .hdf:
+                break
+            default:
+                throw X68Error.unsupported(
+                    "Experimental write mount supports HDS/HDF only (got \(disk.detection.kind.rawValue))"
+                )
+            }
+        }
+
         let fuse = FuseAvailability.probe(fileManager: fileManager)
         var record: MountRecord?
 
@@ -101,18 +121,36 @@ public final class MountService: @unchecked Sendable {
                     record = try mountWithFuse(
                         helper: helper,
                         imageURL: standardized,
-                        partitionIndex: partitionIndex
+                        partitionIndex: partitionIndex,
+                        experimentalWrite: experimentalWrite
                     )
                 } catch {
-                    // Fall through to snapshot
+                    if experimentalWrite {
+                        // Write intent must not silently become a RO folder.
+                        throw error
+                    }
                     fputs("x68drv: FUSE mount failed (\(error)); falling back to snapshot\n", stderr)
                 }
+            } else if experimentalWrite {
+                throw X68Error.io(
+                    "Experimental write requires x68mount-helper (rebuild the app or: swift build --product x68mount-helper)"
+                )
             } else {
                 fputs(
                     "x68drv: FUSE is installed but x68mount-helper was not found; falling back to snapshot\n",
                     stderr
                 )
             }
+        } else if experimentalWrite {
+            let reason: String
+            if case .unavailable(let r) = fuse {
+                reason = r
+            } else {
+                reason = "FUSE not available"
+            }
+            throw X68Error.io(
+                "Experimental write mount needs FUSE-T. \(reason)"
+            )
         }
 
         if record == nil {
@@ -207,7 +245,8 @@ public final class MountService: @unchecked Sendable {
     private func mountWithFuse(
         helper: URL,
         imageURL: URL,
-        partitionIndex: Int
+        partitionIndex: Int,
+        experimentalWrite: Bool = false
     ) throws -> MountRecord {
         // Prefer a user-writable mountpoint. Creating under /Volumes needs root on modern
         // macOS; FUSE-T still surfaces `volname` in Finder (sidebar / Desktop) via NFS.
@@ -232,16 +271,22 @@ public final class MountService: @unchecked Sendable {
 
         let volName = fuseVolumeName(for: imageURL, partitionIndex: partitionIndex)
         // noappledouble: fewer junk files; local: treat as local volume in Finder
-        let fuseOpts = "volname=\(volName),rdonly,local,noappledouble,noapplexattr"
+        let ro = experimentalWrite ? "" : "rdonly,"
+        let fuseOpts = "volname=\(volName),\(ro)local,noappledouble,noapplexattr"
 
-        let process = Process()
-        process.executableURL = helper
-        process.arguments = [
+        var arguments = [
             imageURL.path,
             mountURL.path,
             "--partition", "\(partitionIndex)",
-            "-o", fuseOpts,
         ]
+        if experimentalWrite {
+            arguments.append("--experimental-write")
+        }
+        arguments.append(contentsOf: ["-o", fuseOpts])
+
+        let process = Process()
+        process.executableURL = helper
+        process.arguments = arguments
         let errPipe = Pipe()
         process.standardError = errPipe
         process.standardOutput = FileHandle.nullDevice
@@ -282,7 +327,8 @@ public final class MountService: @unchecked Sendable {
             mountURL: mountURL,
             partitionIndex: partitionIndex,
             backend: .fuse,
-            displayName: imageURL.lastPathComponent
+            displayName: imageURL.lastPathComponent,
+            experimentalWrite: experimentalWrite
         )
         fuseProcesses[record.id] = process
         return record

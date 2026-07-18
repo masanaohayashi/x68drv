@@ -70,6 +70,31 @@ final class MountServiceTests: XCTestCase {
         XCTAssertTrue(service.mounts.isEmpty)
     }
 
+    /// Experimental write is HDS/HDF-only and must not silently snapshot.
+    func testExperimentalWriteRejectsFloppy() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("x68-ew-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let image = try SyntheticXDF.makeEmpty2HD()
+        let imageURL = tmp.appendingPathComponent("a.xdf")
+        try image.write(to: imageURL)
+
+        let service = MountService(mountsRoot: tmp.appendingPathComponent("M"))
+        XCTAssertThrowsError(
+            try service.mount(url: imageURL, preferFuse: true, experimentalWrite: true)
+        ) { error in
+            let msg = (error as? X68Error).map(\.localizedDescription) ?? "\(error)"
+            XCTAssertTrue(
+                msg.lowercased().contains("hds") || msg.lowercased().contains("hdf")
+                    || msg.lowercased().contains("write"),
+                "unexpected error: \(msg)"
+            )
+        }
+        XCTAssertTrue(service.mounts.isEmpty)
+    }
+
     func testMaxMounts() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("x68-max-\(UUID().uuidString)", isDirectory: true)

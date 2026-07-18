@@ -70,6 +70,8 @@ struct MenuBarView: View {
 
     private func mountLabel(_ mount: MountRecord) -> String {
         switch mount.backend {
+        case .fuse where mount.experimentalWrite:
+            return "\(mount.displayName) [volume · write]"
         case .fuse:
             return "\(mount.displayName) [volume]"
         case .snapshot:

@@ -27,16 +27,26 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Settings: opt-in experimental FUSE write (HDS/HDF). Default off.
+    @Published var experimentalWriteMount: Bool {
+        didSet {
+            UserDefaults.standard.set(experimentalWriteMount, forKey: Self.experimentalWriteKey)
+        }
+    }
+
     @Published var loginItemStatusText: String = ""
     @Published var loginItemError: String?
 
     @Published var wantsSettingsWindow: Bool = false
+
+    private static let experimentalWriteKey = "experimentalWriteMount"
 
     private var didFinishRouting = false
     private var launchedAsLoginItem = false
     private var suppressLoginItemWrite = false
 
     private init() {
+        experimentalWriteMount = UserDefaults.standard.bool(forKey: Self.experimentalWriteKey)
         launchedAsLoginItem = LaunchRouter.isExplicitLoginLaunch()
         // Previous crash / force-quit / quit-without-eject can leave FUSE mounts
         // and snapshot folders under Application Support — reclaim before UI work.
@@ -128,15 +138,25 @@ final class AppModel: ObservableObject {
                 }
                 return
             }
-            let record = try mountService.mount(url: url, partitionIndex: partitionIndex)
+            let record = try mountService.mount(
+                url: url,
+                partitionIndex: partitionIndex,
+                experimentalWrite: experimentalWriteMount
+            )
             mounts = mountService.mounts
-            switch record.backend {
-            case .fuse:
-                lastDocumentMessage = "Mounted \(record.displayName) as live volume"
-            case .snapshot:
-                lastDocumentMessage = "Opened \(record.displayName) as temporary folder (install FUSE-T + rebuild for live volume)"
+            switch (record.backend, record.experimentalWrite) {
+            case (.fuse, true):
+                lastDocumentMessage =
+                    "Mounted \(record.displayName) writable (experimental) — image is modified; backup .x68drv-bak"
+            case (.fuse, false):
+                lastDocumentMessage = "Mounted \(record.displayName) as live volume (read-only)"
+            case (.snapshot, _):
+                lastDocumentMessage =
+                    "Opened \(record.displayName) as temporary folder (install FUSE-T + rebuild for live volume)"
             }
-            log.info("Mounted \(record.displayName, privacy: .public) backend=\(record.backend.rawValue, privacy: .public)")
+            log.info(
+                "Mounted \(record.displayName, privacy: .public) backend=\(record.backend.rawValue, privacy: .public) write=\(record.experimentalWrite)"
+            )
             if revealInFinder {
                 NSWorkspace.shared.open(record.mountURL)
             }
