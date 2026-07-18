@@ -78,6 +78,53 @@ final class HddInjectTests: XCTestCase {
         XCTAssertTrue(try vol.fsck().isClean)
     }
 
+    /// Stage B: delete root file; name gone, fsck clean, free space reusable.
+    func testDeleteRootFile() throws {
+        let payload = Data("to-be-deleted".utf8)
+        let base = try SyntheticHDS.makeWithFile(
+            fileName: HumanFileName(stem: "VICTIM", ext: "TXT"),
+            contents: payload
+        )
+        let part = try HdsImage(data: base).partitions[0]
+
+        let (afterDel, del) = try HddInject.deleteRootFile(
+            imageData: base,
+            partition: part,
+            fileName: HumanFileName(stem: "VICTIM", ext: "TXT")
+        )
+        XCTAssertEqual(del.remoteName.uppercased(), "VICTIM.TXT")
+        XCTAssertGreaterThanOrEqual(del.freedClusters, 1)
+
+        let vol = try HdsImage(data: afterDel).openVolume()
+        XCTAssertFalse(try vol.list().contains(where: { $0.name.display.uppercased() == "VICTIM.TXT" }))
+        XCTAssertTrue(try vol.fsck().isClean)
+
+        // Reuse freed space with inject
+        let (afterInj, inj) = try HddInject.injectRootFile(
+            imageData: afterDel,
+            partition: part,
+            fileName: HumanFileName(stem: "NEW", ext: "BIN"),
+            contents: Data("reuse".utf8),
+            overwrite: false
+        )
+        XCTAssertEqual(inj.bytesWritten, 5)
+        let vol2 = try HdsImage(data: afterInj).openVolume()
+        XCTAssertEqual(try vol2.readFile(path: HumanPath(display: "NEW.BIN")), Data("reuse".utf8))
+        XCTAssertTrue(try vol2.fsck().isClean)
+    }
+
+    func testDeleteMissingFileThrows() throws {
+        let base = try SyntheticHDS.makeMinimal()
+        let part = try HdsImage(data: base).partitions[0]
+        XCTAssertThrowsError(
+            try HddInject.deleteRootFile(
+                imageData: base,
+                partition: part,
+                fileName: HumanFileName(stem: "NOPE", ext: "TXT")
+            )
+        )
+    }
+
     func testFAT16AllocateChain() throws {
         // Minimal table: clusters 0..5
         var table = Data(count: 12)

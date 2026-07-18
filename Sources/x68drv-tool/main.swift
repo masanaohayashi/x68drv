@@ -16,6 +16,10 @@ enum X68drvTool {
             try runInject(Array(args.dropFirst(2)))
             return
         }
+        if cmd == "delete" {
+            try runDelete(Array(args.dropFirst(2)))
+            return
+        }
 
         guard args.count >= 3 else {
             printUsage()
@@ -160,6 +164,73 @@ enum X68drvTool {
         }
     }
 
+    /// Stage B: experimental root-file delete on HDS/HDF.
+    ///
+    ///     x68drv-tool delete --write <image> <NAME.EXT> [partition]
+    private static func runDelete(_ args: [String]) throws {
+        var write = false
+        var positional: [String] = []
+        for a in args {
+            switch a {
+            case "--write": write = true
+            default:
+                if a.hasPrefix("-") {
+                    fputs("unknown delete flag: \(a)\n", stderr)
+                    exit(2)
+                }
+                positional.append(a)
+            }
+        }
+        guard write else {
+            fputs(
+                "delete refuses to run without --write (experimental; may destroy the image)\n",
+                stderr
+            )
+            exit(2)
+        }
+        guard positional.count >= 2 else {
+            fputs(
+                "usage: x68drv-tool delete --write <image> <NAME.EXT> [partition]\n",
+                stderr
+            )
+            exit(2)
+        }
+        let imageURL = URL(fileURLWithPath: positional[0])
+        let remote = HumanFileName(display: positional[1])
+        let part = positional.count >= 3 ? (Int(positional[2]) ?? 0) : 0
+
+        let disk = try DiskImage.open(url: imageURL)
+        let vol = try disk.openVolume(partitionIndex: part)
+        let report = try vol.fsck()
+        if !report.isClean {
+            fputs("fsck not clean; refusing delete:\n", stderr)
+            for issue in report.issues {
+                fputs("  \(issue.kind.rawValue)\t\(issue.path)\t\(issue.message)\n", stderr)
+            }
+            exit(1)
+        }
+
+        let result = try HddInject.deleteRootFileToURL(
+            imageURL: imageURL,
+            partitionIndex: part,
+            remoteName: remote
+        )
+        print("deleted \(result.remoteName) freedClusters=\(result.freedClusters)")
+
+        let disk2 = try DiskImage.open(url: imageURL)
+        let vol2 = try disk2.openVolume(partitionIndex: part)
+        let report2 = try vol2.fsck()
+        if report2.isClean {
+            print("fsck: clean")
+        } else {
+            fputs("warning: fsck dirty after delete\n", stderr)
+            for issue in report2.issues {
+                fputs("  \(issue.kind.rawValue)\t\(issue.path)\t\(issue.message)\n", stderr)
+            }
+            exit(1)
+        }
+    }
+
     private static func printUsage() {
         fputs(
             """
@@ -171,7 +242,9 @@ enum X68drvTool {
               x68drv-tool mount <image> [partition]
               x68drv-tool eject-all
               x68drv-tool inject --write [--overwrite] <image> <host-file> <NAME.EXT> [partition]
-                (experimental Stage A: HDS/HDF root inject only; backs up nothing — copy image first)
+                (experimental: HDS/HDF root inject; copy the image first)
+              x68drv-tool delete --write <image> <NAME.EXT> [partition]
+                (experimental Stage B: HDS/HDF root file delete)
 
             """,
             stderr

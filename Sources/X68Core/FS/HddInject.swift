@@ -1,12 +1,13 @@
 import Foundation
 
-/// Stage A experimental inject into Human68k HDD volumes (HDS/HDF, BE FAT16).
+/// Experimental write helpers for Human68k HDD volumes (HDS/HDF, BE FAT16).
 ///
 /// **Not** product FUSE write. Mutates a full image buffer and returns it.
-/// Commit semantics (in-memory then atomic host replace):
-/// data clusters → FAT copies → directory entry → host write.
 ///
-/// See design.md ordered flush (experimental Stage A).
+/// - **Inject**: data clusters → FAT copies → directory entry → host write
+/// - **Delete**: directory 0xE5 → free FAT chain → host write (design.md order)
+///
+/// Stage A: root inject. Stage B: root delete (+ inject overwrite uses free-then-slot).
 public enum HddInject {
     public struct Result: Equatable, Sendable {
         public var remoteName: String
@@ -14,6 +15,11 @@ public enum HddInject {
         public var firstCluster: Int
         public var clusterCount: Int
         public var overwritten: Bool
+    }
+
+    public struct DeleteResult: Equatable, Sendable {
+        public var remoteName: String
+        public var freedClusters: Int
     }
 
     /// Inject `contents` as `fileName` into the **root directory** of `partition`.
@@ -189,7 +195,133 @@ public enum HddInject {
         return result
     }
 
+    // MARK: - Stage B delete
+
+    /// Delete a **file** from the root directory (not a subdirectory).
+    ///
+    /// Order (design.md): mark directory entry deleted (0xE5), then free FAT chain.
+    public static func deleteRootFile(
+        imageData: Data,
+        partition: PartitionEntry,
+        fileName: HumanFileName
+    ) throws -> (image: Data, result: DeleteResult) {
+        var image = imageData
+        let ctx = try volumeContext(image: image, partition: partition)
+        var fat = ctx.fat
+
+        var found: (offset: Int, entry: DirEntry)?
+        var o = 0
+        while o + DirEntry.size <= ctx.rootBytes {
+            let abs = ctx.rootAbs + o
+            let entry = try DirEntry.parse(image, at: abs)
+            if entry.isEnd { break }
+            if !entry.isDeleted, entry.isFile, namesEqual(entry.name, fileName) {
+                found = (abs, entry)
+                break
+            }
+            if !entry.isDeleted, entry.isDirectory, namesEqual(entry.name, fileName) {
+                throw X68Error.filesystem("Refusing to delete directory: \(fileName.display)")
+            }
+            o += DirEntry.size
+        }
+        guard let target = found else {
+            throw X68Error.filesystem("File not found: \(fileName.display)")
+        }
+
+        // 1) Directory first — name disappears before clusters are freed.
+        var slot = image.subdata(in: target.offset..<(target.offset + DirEntry.size))
+        slot = DirEntry.markDeleted(slot)
+        image.replaceSubrange(target.offset..<(target.offset + DirEntry.size), with: slot)
+
+        // 2) Free FAT chain
+        var freed = 0
+        if target.entry.firstCluster >= 2 {
+            let chain = try fat.chain(from: Int(target.entry.firstCluster))
+            try fat.freeChain(chain)
+            freed = chain.count
+        }
+        image.replaceSubrange(ctx.fat1Abs..<(ctx.fat1Abs + ctx.fatBytes), with: fat.table)
+        if ctx.bpb.fatCount >= 2 {
+            image.replaceSubrange(ctx.fat2Abs..<(ctx.fat2Abs + ctx.fatBytes), with: fat.table)
+        }
+
+        return (
+            image,
+            DeleteResult(remoteName: fileName.display, freedClusters: freed)
+        )
+    }
+
+    @discardableResult
+    public static func deleteRootFileToURL(
+        imageURL: URL,
+        partitionIndex: Int = 0,
+        remoteName: HumanFileName
+    ) throws -> DeleteResult {
+        let original = try Data(contentsOf: imageURL, options: [.mappedIfSafe])
+        let partition = try partitionEntry(data: original, index: partitionIndex)
+        let (mutated, result) = try deleteRootFile(
+            imageData: original,
+            partition: partition,
+            fileName: remoteName
+        )
+        try atomicWrite(mutated, to: imageURL)
+        return result
+    }
+
     // MARK: - helpers
+
+    private struct VolumeContext {
+        var boot: Int
+        var volEnd: Int
+        var bpb: HddBPB
+        var fatBytes: Int
+        var fat1Abs: Int
+        var fat2Abs: Int
+        var fat: FAT16BE
+        var rootAbs: Int
+        var rootBytes: Int
+    }
+
+    private static func volumeContext(image: Data, partition: PartitionEntry) throws -> VolumeContext {
+        let boot = partition.bootOffset
+        let volEnd: Int
+        if partition.recordCount > 0 {
+            volEnd = min(image.count, boot + partition.byteLength)
+        } else {
+            volEnd = image.count
+        }
+        guard boot >= 0, boot < volEnd else {
+            throw X68Error.format("Invalid partition boot offset")
+        }
+        let volumeSlice = image.subdata(in: boot..<volEnd)
+        let bpb = try HddBPB.parse(volume: volumeSlice)
+        let fatBytes = bpb.fatSizeSectors * bpb.bytesPerSector
+        let fat1Abs = boot + bpb.reservedSectors * bpb.bytesPerSector
+        let fat2Abs = fat1Abs + fatBytes
+        guard fat1Abs + fatBytes <= volEnd, fat2Abs + fatBytes <= volEnd else {
+            throw X68Error.format("FAT region out of partition")
+        }
+        let fat = FAT16BE(
+            table: image.subdata(in: fat1Abs..<(fat1Abs + fatBytes)),
+            maxClusters: max(2, fatBytes / 2 - 1)
+        )
+        let rootAbs = boot + bpb.rootDirOffsetInVolume
+        let rootBytes = bpb.rootEntryCount * DirEntry.size
+        guard rootAbs + rootBytes <= volEnd else {
+            throw X68Error.format("Root directory out of partition")
+        }
+        return VolumeContext(
+            boot: boot,
+            volEnd: volEnd,
+            bpb: bpb,
+            fatBytes: fatBytes,
+            fat1Abs: fat1Abs,
+            fat2Abs: fat2Abs,
+            fat: fat,
+            rootAbs: rootAbs,
+            rootBytes: rootBytes
+        )
+    }
 
     private static func partitionEntry(data: Data, index: Int) throws -> PartitionEntry {
         let detection = ImageDetector.detect(data: data)
@@ -208,7 +340,7 @@ public enum HddInject {
             return parts[index]
         default:
             throw X68Error.unsupported(
-                "Stage A inject supports HDS/HDF only (got \(detection.kind.rawValue))"
+                "HDD write helpers support HDS/HDF only (got \(detection.kind.rawValue))"
             )
         }
     }

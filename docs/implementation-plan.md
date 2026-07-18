@@ -26,7 +26,7 @@ Phase 7  HDF 検証クラス + ローカル disk/ 回帰
 Phase 8  0.1 受け入れ（PRD-8）+ 配布メモ
 
 （バックログ）書込 Stage B+ / 自動更新 / 追加フォーマット  
-（実装済・実験）**書込 Stage A**: `HddInject` + `x68drv-tool inject --write`（HDS/HDF ルートのみ。製品 FUSE 書込ではない）
+（実装済・実験）**書込 Stage A/B**: `HddInject` inject/delete + CLI `--write`（HDS/HDF ルートのみ。製品 FUSE 書込ではない）
 ```
 
 ### 依存関係（簡略）
