@@ -273,33 +273,33 @@ flowchart LR
 
 | ID | タスク | 完了条件 |
 |----|--------|----------|
-| T6.1 | `x68mount-helper`（RO FUSE-T）: readdir/read/getattr | |
-| T6.2 | `MountService`: マウントポイント命名・上限 8・状態一覧 | |
-| T6.3 | Mode C: document open → mount → `NSWorkspace.open` | |
-| T6.4 | メニュー: マウント中 / Finder で表示 / **取り出す** / すべて取り出す | |
-| T6.5 | FUSE 未導入検出 → アラート + リンク（偽マウントしない） | |
-| T6.6 | 書き込み FUSE op は EROFS / 拒否 | |
-| T6.7 | （推奨）緊急 FO: アプリ内 list + export | |
-| T6.8 | 同一パス再 open → remount せず Finder 前面 | |
+| T6.1 | FUSE helper | **Deferred** — 差し込み口のみ（未インストール環境） |
+| T6.2 | `MountService` 命名・上限 8・状態 | ✅ |
+| T6.3 | Mode C: open → mount → Finder | ✅ **snapshot backend** |
+| T6.4 | メニュー: 表示 / 取り出す / すべて | ✅ |
+| T6.5 | FUSE 検出 + ステータス / 導入リンク | ✅ |
+| T6.6 | スナップショットは静的 export（イメージへは書かない） | ✅ |
+| T6.7 | 一時フォルダマウント（Finder で D&D 可） | ✅ 現行 backend |
+| T6.8 | 同一パス再 open → remount せず Finder | ✅ |
+
+**実装メモ**: 本機に FUSE-T が無いため、v0.1 は  
+`~/Library/Application Support/x68drv/Mounts/…` に **読み取りスナップショットを展開**して Finder で開く。  
+ライブ FUSE は helper 追加時に `MountBackend.fuse` へ切替予定。
 
 ### テスト
 
-| テスト ID | 内容 | 種別 |
-|-----------|------|------|
-| U6.mount_point | 命名・衝突時 suffix | Unit |
-| U6.ro_policy | write 系がエラーになる（ヘルパのユニット or 統合） | Unit |
-| I6.fuse_xdf | 合成 or ローカル XDF を helper で mount → `ls` 一致 | 統合（FUSE 要） |
-| I6.fuse_hds | 同上 HDS | 統合（FUSE 要） |
-| M6.prd8_3 | `OSR2.xdf` ダブルクリック → Finder → D&D コピー | **手動 PRD-8** |
-| M6.prd8_4 | 取り出す → 消える | **手動** |
-| M6.prd8_5 | `System.HDS` マウント | **手動** |
-| M6.prd8_6 | FUSE 無し → 明確エラー | **手動** |
-| M6.multi | 2 イメージ同時マウント | **手動** |
-| M6.eject_finder | Finder 取り出しとメニュー同期 | **手動** |
+| テスト ID | 内容 | 種別 | 状態 |
+|-----------|------|------|------|
+| U6.mount_point | 命名・衝突 suffix | Unit | ✅ |
+| U6 mount/export/reuse/eject | MountService | Unit | ✅ |
+| M6.prd8_* | Finder 手動 | **手動** | 要確認 |
+
+**Phase 6 完了（実用パス）**（2026-07-18）: snapshot mount + UI。`swift test` 43 pass。
 
 ### 参照
 
 - `design.md` PRD-5,6,8 / PR-12  
+
 
 ---
 

@@ -19,10 +19,15 @@ struct SettingsView: View {
                     .textSelection(.enabled)
             }
 
-            Text("Open X68000 disk images (.xdf / .hds / .hdf / .dim) from Finder. v0.1 is read-only; FUSE-T is required for mounting (Phase 6).")
+            Text("Open .xdf / .hds / .hdf / .dim from Finder or the menu. v0.1 is read-only. Images are currently opened as temporary folders under Application Support (live FUSE mount when FUSE-T + helper are available).")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Text(model.fuseStatusText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
 
             Toggle("Open at Login", isOn: $model.openAtLogin)
 
@@ -44,9 +49,11 @@ struct SettingsView: View {
             }
 
             HStack {
+                Button("FUSE-T Website") {
+                    NSWorkspace.shared.open(FuseAvailability.fuseTInstallURL)
+                }
                 Spacer()
                 Button("OK") {
-                    // PRD: close window only; do not quit.
                     model.closeSettings()
                     NSApp.keyWindow?.close()
                 }
@@ -54,9 +61,10 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 340)
+        .frame(minWidth: 360)
         .onAppear {
             model.refreshLoginItemState()
+            model.refreshFuseStatus()
         }
     }
 

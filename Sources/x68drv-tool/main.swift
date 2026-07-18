@@ -14,6 +14,8 @@ enum X68drvTool {
                   x68drv-tool list <image> [partition]
                   x68drv-tool export <image> <path-in-image> <host-out> [partition]
                   x68drv-tool fsck <image> [partition]
+                  x68drv-tool mount <image> [partition]
+                  x68drv-tool eject-all
 
                 """,
                 stderr
@@ -65,6 +67,17 @@ enum X68drvTool {
                 print("\(issue.kind.rawValue)\t\(issue.path)\t\(issue.message)")
             }
             exit(1)
+
+        case "mount":
+            // Snapshot-mount for CLI testing (opens folder under Application Support).
+            let part = args.count >= 4 ? (Int(args[3]) ?? 0) : 0
+            let service = MountService.shared
+            let record = try service.mount(url: imageURL, partitionIndex: part)
+            print("mounted \(record.mountURL.path) backend=\(record.backend.rawValue)")
+
+        case "eject-all":
+            try MountService.shared.ejectAll()
+            print("ejected all")
 
         default:
             fputs("unknown command: \(cmd)\n", stderr)

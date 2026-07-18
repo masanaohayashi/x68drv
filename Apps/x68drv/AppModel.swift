@@ -4,16 +4,21 @@ import AppKit
 import X68Core
 import os.log
 
-/// Shared application state for settings, launch mode, and (later) mounts.
+/// Shared application state for settings, launch mode, and mounts.
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
 
     private let log = Logger(subsystem: "app.x68drv.x68drv", category: "AppModel")
+    private let mountService = MountService.shared
 
     @Published private(set) var launchMode: LaunchMode = .interactive
     @Published var pendingDocumentURLs: [URL] = []
     @Published var lastDocumentMessage: String?
+    @Published var lastError: String?
+
+    @Published private(set) var mounts: [MountRecord] = []
+    @Published var fuseStatusText: String = ""
 
     @Published var openAtLogin: Bool = false {
         didSet {
@@ -25,8 +30,11 @@ final class AppModel: ObservableObject {
     @Published var loginItemStatusText: String = ""
     @Published var loginItemError: String?
 
-    /// When true, the settings window should be visible (Mode A or user request).
     @Published var wantsSettingsWindow: Bool = false
+
+    /// Show emergency export browser (Phase 6 FO).
+    @Published var browseVolume: (any ReadableVolume)?
+    @Published var browseTitle: String = ""
 
     private var didFinishRouting = false
     private var launchedAsLoginItem = false
@@ -35,9 +43,10 @@ final class AppModel: ObservableObject {
     private init() {
         launchedAsLoginItem = LaunchRouter.isExplicitLoginLaunch()
         refreshLoginItemState()
+        refreshFuseStatus()
+        mounts = mountService.mounts
     }
 
-    /// Call once after launch once document open events have had a chance to arrive.
     func finalizeLaunchRouting() {
         guard !didFinishRouting else { return }
         didFinishRouting = true
@@ -45,7 +54,6 @@ final class AppModel: ObservableObject {
         if LaunchRouter.isExplicitLoginLaunch() {
             launchedAsLoginItem = true
         } else if LoginItemService.isEnabled && isSparseArgvLaunch() && !NSApp.isActive {
-            // Heuristic: login items often start without user activation.
             launchedAsLoginItem = true
         }
 
@@ -62,11 +70,12 @@ final class AppModel: ObservableObject {
             wantsSettingsWindow = false
         case .document:
             wantsSettingsWindow = false
-            handlePendingDocumentsStub()
+            mountPendingDocuments()
         }
     }
 
     func openSettings() {
+        refreshFuseStatus()
         wantsSettingsWindow = true
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -81,14 +90,97 @@ final class AppModel: ObservableObject {
         pendingDocumentURLs.append(contentsOf: diskURLs)
         if didFinishRouting {
             launchMode = .document
-            handlePendingDocumentsStub()
+            mountPendingDocuments()
         }
     }
 
-    private func handlePendingDocumentsStub() {
-        let names = pendingDocumentURLs.map(\.lastPathComponent).joined(separator: ", ")
-        lastDocumentMessage = "Open requested (mount in Phase 6): \(names)"
-        log.info("Document open stub: \(names, privacy: .public)")
+    func mountPendingDocuments() {
+        let urls = pendingDocumentURLs
+        pendingDocumentURLs.removeAll()
+        for url in urls {
+            mount(url: url, revealInFinder: true)
+        }
+    }
+
+    func mount(url: URL, partitionIndex: Int = 0, revealInFinder: Bool = true) {
+        lastError = nil
+        do {
+            if let existing = mountService.existingMount(for: url, partitionIndex: partitionIndex) {
+                lastDocumentMessage = "Already mounted: \(existing.displayName)"
+                mounts = mountService.mounts
+                if revealInFinder {
+                    NSWorkspace.shared.open(existing.mountURL)
+                }
+                return
+            }
+            let record = try mountService.mount(url: url, partitionIndex: partitionIndex)
+            mounts = mountService.mounts
+            let backendNote = record.backend == .snapshot
+                ? " (temporary folder; install FUSE-T for live mount later)"
+                : ""
+            lastDocumentMessage = "Mounted \(record.displayName)\(backendNote)"
+            log.info("Mounted \(record.displayName, privacy: .public) at \(record.mountURL.path, privacy: .public)")
+            if revealInFinder {
+                NSWorkspace.shared.open(record.mountURL)
+            }
+        } catch {
+            lastError = error.localizedDescription
+            lastDocumentMessage = nil
+            log.error("Mount failed: \(error.localizedDescription, privacy: .public)")
+            presentMountError(error, url: url)
+        }
+    }
+
+    func eject(id: UUID) {
+        do {
+            try mountService.eject(id: id)
+            mounts = mountService.mounts
+            lastDocumentMessage = "Ejected"
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func ejectAll() {
+        do {
+            try mountService.ejectAll()
+            mounts = mountService.mounts
+        } catch {
+            lastError = error.localizedDescription
+            mounts = mountService.mounts
+        }
+    }
+
+    func revealInFinder(id: UUID) {
+        guard let record = mounts.first(where: { $0.id == id }) else { return }
+        NSWorkspace.shared.open(record.mountURL)
+    }
+
+    func refreshFuseStatus() {
+        switch mountService.fuseStatus() {
+        case let .available(detail):
+            fuseStatusText = "FUSE: available (\(detail))"
+        case let .unavailable(reason):
+            fuseStatusText = "FUSE: not found — using temporary folder mounts. \(reason)"
+        }
+    }
+
+    private func presentMountError(_ error: Error, url: URL) {
+        let alert = NSAlert()
+        alert.messageText = "Could not open \(url.lastPathComponent)"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        if case .unavailable = mountService.fuseStatus() {
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "FUSE-T Website")
+            let response = alert.runModal()
+            if response == .alertSecondButtonReturn {
+                NSWorkspace.shared.open(FuseAvailability.fuseTInstallURL)
+            }
+        } else {
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
     }
 
     private func isDiskImage(_ url: URL) -> Bool {

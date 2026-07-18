@@ -44,9 +44,11 @@ Apps/x68drv/          # SwiftUI app shell (settings + menu bar skeleton)
 docs/                 # design, research, implementation plan
 ```
 
-## Status (v0.1 scaffolding)
+## Status
 
-Phase 0 skeleton only: empty library + app shell. Disk parsing and FUSE mount are later phases — see [`docs/implementation-plan.md`](docs/implementation-plan.md).
+Core can read **XDF / DIM / HDS**. The app mounts images by exporting a **temporary read-only folder** under Application Support and opening it in Finder (works without FUSE-T). Live FUSE is planned once FUSE-T + helper are available.
+
+See [`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 ## License
 
