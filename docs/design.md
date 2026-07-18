@@ -5,8 +5,8 @@
 | 文書名 | x68drv Design Document |
 | 著者 | （リポジトリオーナー） |
 | 日付 | 2026-07-18 |
-| 改訂 | 2026-07-18 Rev.5.4（design.md を docs/ へ） |
-| 状態 | **Accepted for menu-bar RO-first** |
+| 改訂 | 2026-07-18 Rev.6（Product Requirements / Finder 本線） |
+| 状態 | **Accepted for Finder-mount RO app** |
 | リポジトリ | `/Users/ring2/Documents/src/x68drv` |
 | 対象 OS | macOS 13+ 推奨（MenuBarExtra）。下限は macOS 12 検討可。Apple Silicon / Intel |
 
@@ -14,22 +14,21 @@
 
 ## Overview
 
-X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` / `.xdf`）を、エミュレータなしで macOS から使えるようにする **メニューバー常駐アプリ** **x68drv** を設計する。
+X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` / `.xdf` 等）を、エミュレータなしで macOS の **Finder から普通に使える**ようにするアプリ **x68drv** を設計する。
 
-**最終ゴール（製品）** はターミナル専用ツールではない。
+**製品の本線**（ユーザー決定 2026-07-18）:
 
-1. `/Applications` に `x68drv.app` を入れる  
-2. **ダブルクリックで起動**（Dock に常駐しない設定も可）  
-3. **メニューバーにアイコン**が出て、開く / マウント解除 / 最近使ったイメージ / 設定 を操作する  
-4. マウントした内容は **Finder** で触る（読取専用先行）
+1. `/Applications` に置く **一般的な macOS GUI アプリ**（`.app`）  
+2. **アプリをダブルクリック** → **設定ウィンドウ**（最小: バージョン + OK、ログイン時起動トグル）  
+3. **ログイン時サイレント起動** → ウィンドウを出さない（メニューバーのみ）  
+4. **メニューバー常駐**（終了・マウント中の操作はここから）  
+5. **イメージを Finder でダブルクリック** → **読取専用マウント**  
+6. **取り出す** でアンマウント  
+7. マウント後は **Finder でフォルダを開き、ドラッグ&ドロップで Mac へコピー**できる  
 
-フォーマット解釈（Human68k LE/BE、SxSI パーティション等）の調査結果は Rev.4 までと同様。**製品の一次 UI は Swift メニューバーアプリ**とし、CLI は開発・デバッグ・自動化用の副産物とする。
+ターミナルは主 UI ではない。フォーマット解釈は `docs/` の調査メモに基づき **Swift で自前実装**（XM6/MPX68K は参照のみ・リポジトリ外）。
 
-**Rev.5 の要点（ユーザー決定 2026-07-18）**: 最終形は **Application フォルダのメニューバーアプリ**。言語は **Swift 第一**（Rust 一本は不採用）。RO + extract / mount 先行。ライセンス MIT。HDF は実サンプル + `xm6_206s`。
-
-**Rev.5.1–5.2**: `xm6_206s` / `MPX68K` は参照専用。入口マップと `disk/` 実測を **docs/** に記録（下記）。
-
-### 関連ドキュメント（調査の正本）
+### 関連ドキュメント
 
 | 文書 | 内容 |
 |------|------|
@@ -88,26 +87,174 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 | G-HDF-a | `.hdf`（SASI）の **レイアウトクラス検出と診断レポート** | v0.1（マウント成功は要求しない） |
 | G-HDF-b | 検証済みクラスの `.hdf` のみ **mount/extract 成功** | 実サンプル + XM6 ソース照合後、ゴールデン達成クラスから段階解放 |
 | G-FS | Human68k FS の正しい **読取**解釈（媒体クラス別 endian、18.3 名、Shift_JIS ⇔ UTF-8） | v0.1 |
-| G-APP | **`x68drv.app` メニューバー常駐**（ダブルクリック起動、ログイン時起動オプション） | **v0.1 必須** |
-| G-UX | メニューからイメージを開く / ドラッグ&ドロップ / マウント解除 / 「Finder で表示」 / 最近使った項目 | **v0.1 必須** |
-| G-FUSE | macOS 上 **読取専用** マウント（FUSE-T 優先）。Finder で一覧・コピーアウト | **v0.1 RO のみ** |
-| G-BROWSE | FUSE 未導入時の **アプリ内ブラウザ + ホストへ書き出し**（フォールバック） | v0.1 推奨（FUSE 依存を必須にしないため） |
-| G-CLI | （任意）開発用 CLI / テストハーネス。**製品の主経路ではない** | テストに必要なら v0.1 内部利用 |
-| G-TEST | ゴールデン + scsitools/fathuman オラクル（CI） | 継続 |
+| G-APP | **一般的な macOS GUI `.app`** + **メニューバー常駐** + 終了 | **v0.1 必須** |
+| G-LAUNCH | **起動3モード**（対話起動 / ログイン silent / ドキュメント open） | **v0.1 必須** |
+| G-DOC | Finder で `.xdf` / `.hds` / `.hdf`（+ `.dim`）を **このアプリで開く** → RO マウント | **v0.1 必須** |
+| G-FINDER | マウント後 **Finder で閲覧・D&D コピーアウト**・**取り出しでアンマウント** | **v0.1 必須** |
+| G-PREF | 設定 UI（バージョン表示、ログイン時起動トグル、最低限の診断） | **v0.1 必須** |
+| G-FUSE | **FUSE-T による RO マウントが製品本線** | **v0.1 必須**（未導入時は導入案内） |
+| G-BROWSE | FUSE 未導入時の **緊急 FO**（アプリ内一覧 + 書き出し） | v0.1 推奨（本線ではない） |
+| G-CLI | （任意）開発用。**製品の主経路ではない** | テスト用 |
+| G-TEST | ゴールデン + オラクル CI | 継続 |
 | G-WRITE | （**将来**）イメージへの書込 | **0.1 非対象** |
 
 ### Non-Goals（初期スコープ外） / 当面のスコープ境界
 
-- **ターミナルを主 UI にした製品**（CLI は副次。README の主説明は .app）
-- **当面の書込**（マウント RO + extract / 書き出しのみ）
+- **ターミナルを主 UI にした製品**
+- **イメージへの書込**（Finder からイメージへ D&D で書き込むことは 0.1 対象外。コピーは **イメージ → Mac** のみ）
 - カーネル拡張（kext）
+- Mac App Store 配布（FUSE と相性。直配布 + 公証）
 - Windows / Linux 公式パッケージ
 - D88 / FDI 等の複雑コピープロテクト
 - **v0.1 の非 1232KB フロッピー** の完全サポート
 - エミュレータ本体・実機 SASI/SCSI
 - 出荷への Python/scsitools 同梱
 - 本格ディスクユーティリティ GUI（パーティション編集・低レベルフォーマット）
-- **`xm6_206s` / `MPX68K` からのコード移植**（参照・解析のみ。x68drv 本体への取り込み禁止）
+- **XM6 / MPX68K からのコード移植**
+
+---
+
+## Product Requirements（Mac UI / 起動 / Finder）
+
+> ユーザー提示のざっくり要件（2026-07-18）を規範とする。実装はこの節に従う。
+
+### PRD-1. アプリの種類
+
+| 項目 | 決定 |
+|------|------|
+| 形態 | **通常の macOS アプリ**（`x68drv.app`）。Applications に配置 |
+| Dock | **通常アプリ**として扱う（`LSUIElement` による常時非表示は **しない**）。対話起動時は Dock に出る |
+| 常駐 | **メニューバーアイコンは常に出す**（起動中） |
+| 単一インスタンス | 既に起動中なら **2 つ目の .app プロセスを増やさず**、既存へ open イベントを渡す（標準 document app の挙動） |
+
+### PRD-2. 起動3モード
+
+起動理由を判定し、ウィンドウ表示を分岐する。
+
+```text
+起動理由の判定（実装順の目安）:
+
+1. ログイン項目 / SMAppService 経由の launch
+   → Mode B (silent)
+
+2. ドキュメント open（Finder ダブルクリック / このアプリで開く / ドロップで open）
+   → Mode C (document)
+   ※ 同時に複数ファイル open 可
+
+3. それ以外（Dock / Applications から .app をダブルクリック、Spotlight 等）
+   → Mode A (interactive)
+```
+
+| Mode | きっかけ | 設定ウィンドウ | メニューバー | その他 |
+|------|----------|----------------|--------------|--------|
+| **A. Interactive** | ユーザーが `.app` を開いた | **出す** | 出す | マウントはしない（設定だけ見て閉じられる） |
+| **B. Silent (Login)** | ログイン時自動起動 | **出さない** | 出す | 何も前面に出さない。通知も出さない（エラー時のみメニューで分かる程度） |
+| **C. Document** | イメージファイルを開いた | **出さない** | 出す | 対象を **RO マウント** → 成功時 **Finder でマウント先を開く** |
+
+**同時起動の扱い**:
+
+- 既に B/C で常駐中に A 相当（「設定を開く」メニュー）→ 設定ウィンドウだけ出す  
+- 常駐中に C → 追加マウント（または同一パスなら再マウントせず Finder を前面）  
+- 終了はメニューバー「x68drv を終了」のみ（設定の OK は **終了しない**、ウィンドウを閉じるだけ）
+
+### PRD-3. 設定ウィンドウ（Mode A / メニュー「設定…」）
+
+v0.1 の最小 UI:
+
+| 要素 | 内容 |
+|------|------|
+| タイトル | x68drv |
+| バージョン | `CFBundleShortVersionString`（+ build 任意） |
+| トグル | **ログイン時に起動**（`SMAppService.mainApp` 等。macOS 13+） |
+| 状態表示（推奨） | FUSE-T: 利用可 / 未導入 / 権限不足（1 行） |
+| ボタン | **OK**（ウィンドウを閉じる。アプリは終了しない） |
+
+v0.1 で **必須にしない**もの: マウント先パスのカスタム、詳細ログトグル（DEBUG は `os_log` で足りる）。
+
+### PRD-4. メニューバー
+
+常駐中のメニュー（上から目安）:
+
+```text
+x68drv
+├─ 設定…
+├─ ────────────────
+├─ イメージを開く…
+├─ 最近使った項目 ▶  (任意・v0.1 推奨)
+├─ ────────────────
+├─ （マウント中が 0 件なら「マウント中のイメージなし」を disabled）
+├─ ○ name.xdf          ▶
+│     ├─ Finder で表示
+│     └─ 取り出す
+├─ ○ game.hds          ▶
+│     ├─ Finder で表示
+│     ├─ パーティション… (HDD で 2 つ以上あるとき)
+│     └─ 取り出す
+├─ すべて取り出す      (2 件以上のとき)
+├─ ────────────────
+└─ x68drv を終了
+```
+
+- **取り出す** = アンマウント（FUSE umount + 状態クリア）。Finder 側の取り出し操作とも整合するよう、アンマウント通知を扱う  
+- エラー時はメニュー上部またはアラートで短く表示（silent 起動中はアラートを連発しない）
+
+### PRD-5. ドキュメントタイプ（Finder 連携）
+
+`Info.plist` / Xcode target:
+
+| 拡張子 | 役割 | v0.1 |
+|--------|------|------|
+| `.xdf` | フロッピー raw 2HD | **必須**（1232K 成功） |
+| `.hds` | SCSI / SxSI HDD | **必須** |
+| `.hdf` | SASI HDD | **必須**（検証済みクラスのみマウント成功） |
+| `.dim` | フロッピー + ヘッダ | **推奨**（サポートするなら Document Type に含める） |
+
+実装メモ:
+
+- `CFBundleDocumentTypes` / imported UTI（例: `app.x68drv.disk-image` を自前定義し、拡張子を紐付け）  
+- アイコンは v0.1 でシステム汎用でも可  
+- **「このアプリケーションで開く」** とダブルクリックの両方で Mode C  
+- 未対応サイズ / 未知 HDF クラス → アラートで理由を示し、マウントしない  
+
+### PRD-6. マウントと Finder
+
+| 項目 | 決定 |
+|------|------|
+| 方式 | **FUSE-T 経由の RO マウントが本線** |
+| マウントポイント | `/Volumes/x68drv-<basename>[-pN]` など衝突しにくい名前（実装で確定） |
+| 成功時 | `NSWorkspace.shared.open(mountURL)` で Finder 表示 |
+| ユーザー操作 | Finder でフォルダ移動、**D&D / コピーでホストへ取り出し**（RO なので書き込みは拒否） |
+| 取り出す | メニュー「取り出す」または Finder の取り出し → アンマウント |
+| 既定パーティション | **0**。複数ある HDD はメニューから切替 or 初回マウント時に 0 のみ（`--all` 相当は v0.1 任意） |
+| 同時マウント | **複数イメージ可**（上限は例: 8。超過はエラー） |
+
+**FUSE-T 未導入時**:
+
+1. アラート: 「Finder で開くには FUSE-T が必要です」+ 公式サイト / 導入手順リンク  
+2. 副次: 「アプリ内で一覧・書き出し」ボタン（G-BROWSE）  
+3. **未導入のまま「マウント成功」と偽らない**
+
+→ Finder 本線のため、**FUSE は事実上必須**。FO は救済用。
+
+### PRD-7. ログイン時起動
+
+| 項目 | 決定 |
+|------|------|
+| API | macOS 13+: `SMAppService`（Login Item） |
+| 既定 | **OFF**（ユーザーが設定で ON） |
+| 挙動 | Mode B。ウィンドウなし、メニューバーのみ  
+| 権限 | ユーザーがシステム設定で拒否した場合は設定 UI に状態表示 |
+
+### PRD-8. 受け入れシナリオ（0.1）
+
+1. Applications から起動 → 設定が出る → バージョンが見える → OK で閉じてもメニューバーが残る → 終了できる  
+2. 設定でログイン時起動 ON → 再ログイン後、ウィンドウなしでメニューバーだけ出る  
+3. `OSR2.xdf` をダブルクリック → マウント → Finder が開く → ファイルをデスクトップへ D&D できる  
+4. メニューまたは Finder から取り出す → 消える  
+5. `System.HDS` を同様に RO マウントできる  
+6. FUSE-T 無しマシンでは明確なエラー + 導入案内  
+
+---
 
 ---
 
@@ -353,72 +500,70 @@ MS-DOS BPB と **互換ではない**。`scsiformat.py` `write_boot_sector` / `f
 
 ### 製品 UX（最終ゴール）
 
-```text
-/Applications/x68drv.app
-        │  ダブルクリック
-        ▼
-  メニューバーアイコン（常駐）
-        │
-        ├─ イメージを開く…          → ファイルピッカー / ドロップ
-        ├─ 最近使ったイメージ
-        ├─ マウント中: game.hds ▶
-        │     ├─ Finder で表示
-        │     ├─ パーティション切り替え（HDD）
-        │     └─ アンマウント
-        ├─ 設定…（ログイン時起動、マウント先、FUSE 診断）
-        └─ 終了
-```
+詳細は **Product Requirements** 節。ここでは流れのみ。
 
-- **Dock 非表示**（`LSUIElement` / メニューバー専用）を既定候補。設定で Dock 表示も可。  
-- イメージを **Dock アイコン or メニューへ D&D** で開ける。  
-- マウント成功後は **Finder を前面に**（マウントポイントを `NSWorkspace` で open）。  
-- FUSE-T 未導入時はアラート + **アプリ内ブラウザ**へフォールバック（一覧・選択書き出し）。「ターミナルを開け」は出さない。
+```text
+[Mode A] Applications で .app を開く
+    → 設定ウィンドウ（バージョン / ログイン時起動 / OK）
+    → メニューバー常駐（OK 後も終了しない）
+
+[Mode B] ログイン時
+    → サイレント（ウィンドウなし）+ メニューバー
+
+[Mode C] Finder で disk.xdf / .hds / .hdf をダブルクリック
+    → RO マウント (FUSE-T)
+    → Finder で /Volumes/... を開く
+    → ユーザーはフォルダ閲覧・D&D で Mac へコピー
+    → メニュー or Finder「取り出す」でアンマウント
+```
 
 ### アーキテクチャ概要
 
 ```mermaid
 flowchart TB
-  subgraph App["x68drv.app (Swift / SwiftUI)"]
-    MB["MenuBarExtra\nメニュー・状態"]
-    UI["設定 / ブラウザ窓\n（任意）"]
-    SVC["MountService\n状態機械"]
+  subgraph App["x68drv.app (Swift / SwiftUI + AppKit)"]
+    LAUNCH["LaunchRouter\nMode A/B/C"]
+    MB["MenuBarExtra"]
+    PREF["Settings window"]
+    DOC["Document open\nUTI / onOpen"]
+    SVC["MountService"]
   end
 
-  subgraph Core["X68Core (Swift package — 既定)"]
-    DET["ImageDetector\nmagic-first"]
-    IMG["Image backends\nFloppy / SxSI / HDF"]
-    PART["PartitionTable"]
-    FS["Human68kFs\nVolumeClass LE/BE"]
-    ENC["Encoding cp932 ↔ UTF-8"]
-    LOCK["ImageLock flock"]
+  subgraph Core["X68Core (Swift package)"]
+    DET["ImageDetector"]
+    FS["Human68kFs"]
   end
 
   subgraph Host["Host"]
-    FUSET["FUSE-T ヘルパ\n(x68mount-helper)"]
+    FUSET["x68mount-helper\nFUSE-T RO"]
     Finder["Finder"]
-    FILE["イメージファイル"]
+    FILE[".xdf/.hds/.hdf"]
   end
 
+  LAUNCH --> PREF
+  LAUNCH --> DOC
+  LAUNCH --> MB
+  DOC --> SVC
   MB --> SVC
-  UI --> SVC
+  PREF --> LAUNCH
   SVC --> Core
-  SVC -->|マウント要求| FUSET
-  FUSET --> Core
+  SVC --> FUSET
   FUSET --> Finder
   Core --> FILE
+  FILE --> DOC
 ```
 
 ### レイヤ責務
 
 | レイヤ | 責務 | 技術 |
 |--------|------|------|
-| **x68drv.app** | メニューバー UI、通知、設定、ログイン項目、D&D、Finder 連携 | SwiftUI `MenuBarExtra` + AppKit 必要箇所 |
-| **X68Core** | 検出、パーティション、Human68k FS 読取、エンコード、ロック | **Swift Package**（既定）。バイナリ安全のため境界検査を徹底 |
-| **x68mount-helper** | FUSE コールバック（別プロセス推奨） | Swift/C で libfuse 互換 API、または薄いヘルパ。**アプリから spawn** |
-| **開発用 CLI**（任意） | 回帰テスト・オラクル比較 | `swift test` または小さな `x68drv-tool`。製品配布に含めなくてよい |
-| **テスト** | 合成ゴールデン、オラクル | XCTest; scsitools/fathuman は CI subprocess |
+| **x68drv.app** | 起動3モード、設定、メニューバー、ドキュメント open、Login Item | SwiftUI + AppKit。**通常 app**（LSUIElement しない） |
+| **X68Core** | 検出、パーティション、Human68k 読取、エンコード、ロック | Swift Package |
+| **x68mount-helper** | FUSE RO（別プロセス） | FUSE-T / libfuse 互換。アプリが spawn |
+| **開発用 CLI**（任意） | 回帰テスト | 製品 UI ではない |
+| **テスト** | 合成ゴールデン、オラクル、起動シナリオ手動表 | XCTest + 手動 |
 
-**Rust について**: 最終製品がメニューバー .app であるため **Rust 一本は不採用**。パーサを Rust にする「FFI ハイブリッド」は将来オプション（後述 Alternatives）であり、v0.1 では **Swift 単一言語**で速度を優先する。
+**Rust**: v0.1 は **Swift 単一**。FFI ハイブリッドは将来オプション。
 
 ### イメージ検出アルゴリズム（magic-first）
 
@@ -938,19 +1083,19 @@ erDiagram
 
 ## Rollout Plan
 
-### 近接（0.1 まで — メニューバー RO-first）
+### 近接（0.1 まで — Finder-mount RO）
 
-1. **alpha**: Swift Package で XDF → HDS 読取 + XCTest。メニューバー枠（まだマウントなし）で「開く / 一覧 / 書き出し」  
-2. **beta**: FUSE-T RO マウント + Finder で表示。FUSE 無し時はアプリ内ブラウザ  
-3. **0.1.0**: `x68drv.app` を Applications に置いて使える。公証メモ。HDF は detect + 既知クラスのみ  
+1. **alpha**: X68Core（XDF → HDS 読取）+ XCTest。設定ウィンドウ + メニューバー殻（Mode A）  
+2. **beta**: Document Types + Mode C マウント（FUSE-T）+ 取り出す + Login Item（Mode B）  
+3. **0.1.0**: PRD-8 シナリオを満たす。公証メモ。HDF は検証済みクラスのみ  
 
-**0.1 完了の定義**: ダブルクリック → メニューバー → XDF/HDS を RO で Finder またはアプリ内から取り出せること。**ターミナル操作は不要。**
+**0.1 完了の定義**: PRD-8 の 1–6 を満たすこと。**ターミナル不要。Finder でコピーアウトできること。**
 
 ### バックログ（0.1 後）
 
-4. G-HDF-b 拡大、Sparkle 更新、ログイン項目の洗練  
-5. 将来書込（メニューから opt-in）— deferred  
-6. （任意）Rust core 切り出し — 必要性を見てから  
+4. G-HDF-b 拡大、Sparkle、最近使った項目の強化  
+5. 将来書込（イメージへの inject）— deferred  
+6. （任意）Rust core  
 
 ロールバック: .app 差し戻し。
 
@@ -960,27 +1105,29 @@ erDiagram
 
 | # | 決定 | 根拠 |
 |---|------|------|
-| KD-1 | **Swift 第一**で .app + Core を統一。**Rust 一本は不採用** | 最終ゴールがメニューバーアプリ（ユーザー決定 Rev.5） |
-| KD-2 | **FUSE-T 第一**で Finder マウント。未導入時は **アプリ内ブラウザ** | 一般ユーザーに「brew install 必須」だけにしない |
-| KD-3 | **UI 先（メニューバー）**。CLI は副次・テスト用 | 製品の主経路を誤らない |
-| KD-4 | **既定 RO**。当面書込しない | 破損リスク・早期価値 |
-| KD-5 | **Human68k FS を Swift で自前実装** | LE/BE 両対応。単一言語 |
-| KD-6 | **HDS は scsitools を規範** | 実証済み |
-| KD-7 | **HDF は G-HDF-a/b**、未知はマウントしない | 誤マウント防止 |
+| KD-1 | **Swift 第一**で .app + Core を統一 | 通常 GUI + FUSE ヘルパ |
+| KD-2 | **FUSE-T が Finder 本線**。未導入時は導入案内 + 任意 FO | ユーザー要件が Finder 操作 |
+| KD-3 | **起動3モード**（A 設定 / B silent / C document） | ユーザー決定 Rev.6 |
+| KD-4 | **既定 RO**。イメージへの書込は当面しない | 破損リスク。コピーは host へ |
+| KD-5 | **Human68k FS を Swift で自前実装** | LE/BE |
+| KD-6 | **HDS は scsitools 規範** | 実証済み |
+| KD-7 | **HDF は検証クラスのみマウント** | 誤マウント防止 |
 | KD-8 | **cp932 ⇔ UTF-8** | 相互運用 |
-| KD-9 | **マウント既定 partition 0**。メニューで他パーティション選択 | Finder の筋記憶 |
+| KD-9 | **マウント既定 partition 0** | Finder の筋記憶 |
 | KD-10 | ライセンス **MIT のみ** | ユーザー決定 |
-| KD-11 | 内部パスは `HumanPath`（コンポーネント列）。UI は POSIX 表示 | コロン記法は使わない |
-| KD-12 | **VolumeClass 自動 + 設定で override** | scsitools 互換の逃げ道 |
+| KD-11 | 内部 `HumanPath` | 曖昧な path 記法を避ける |
+| KD-12 | **VolumeClass 自動 + override** | 逃げ道 |
 | KD-13 | scsitools 一致は **テスト目標** | 過剰拘束を避ける |
-| KD-14 | （将来書込）ordered write-back + backup。create は data→FAT→dir | 当面未実装 |
+| KD-14 | （将来書込）ordered write-back | 当面未実装 |
 | KD-15 | 時刻は **ローカル TZ** | scsitools 同様 |
-| KD-16 | 製品名 **`x68drv.app`**。ヘルパ `x68mount-helper`（バンドル内） | ユーザー向けは .app のみ |
+| KD-16 | 製品 **`x68drv.app`** + helper バンドル内 | ユーザー向けは .app |
 | KD-17 | v0.1 フロッピーは **1232KB のみ** | スコープ |
 | KD-18 | 出荷物に Python を含めない | メンテ境界 |
-| KD-19 | **近接は RO-first メニューバー** | ユーザー決定 |
-| KD-20 | 既定は **LSUIElement（Dock 非表示）** メニューバー専用 | 「アプリフォルダに入れて使う」常駐ツール |
-| KD-21 | FUSE ヘルパは **別プロセス**（クラッシュ分離） | メイン UI を落とさない |
+| KD-19 | **RO-first + Finder 本線** | ユーザー決定 |
+| KD-20 | **通常アプリ**（LSUIElement しない）。Dock は対話時に表示 | 「一般的な GUI アプリ」要件 |
+| KD-21 | FUSE ヘルパは **別プロセス** | クラッシュ分離 |
+| KD-22 | 設定 OK は **終了しない**（ウィンドウを閉じるだけ） | 常駐モデル |
+| KD-23 | ログイン時起動の既定は **OFF** | ユーザー明示 |
 
 ---
 
@@ -996,8 +1143,10 @@ erDiagram
 | R6 | エミュ同時オープン | Medium | flock（不完全）、メニュー警告 |
 | R7 | 巨大 HDS メモリ | Low | FAT 64MiB キャップ |
 | R8 | 公証 / Gatekeeper | Medium | Developer ID + 公証。FUSE は別途ユーザー導入になりやすい |
-| R9 | FUSE を一般ユーザーが入れない | **High** | 0.1 から **アプリ内ブラウザ + 書き出し**を本線級に扱う |
-| R10 | Sandbox と FUSE/ヘルパ | Medium | 当面 **非 Sandbox** または Helper に必要な entitlement を明示。Mac App Store は非目標 |
+| R9 | FUSE を一般ユーザーが入れない | **High** | 導入案内を必須パスに。FO は救済。README に FUSE-T 前提を明記 |
+| R10 | Sandbox と FUSE/ヘルパ | Medium | 当面 **非 Sandbox**。Mac App Store は非目標 |
+| R11 | 起動モード誤判定（login なのに設定が出る等） | Medium | Launch reason のテスト表、Login Item フラグ |
+| R12 | ドキュメント open の 2 重起動 | Medium | single instance / `application(_:open:)` 集約 |
 
 ---
 
@@ -1013,16 +1162,16 @@ erDiagram
 1. XCTest ユニット: endian BPB 両系、FAT12/16、dir、SJIS  
 2. 統合: export（イメージ→ホスト）  
 3. オラクル CI: scsitools / fathuman  
-4. UI: メニューバー操作の手動チェックリスト  
-5. FUSE: macOS 手動（FUSE-T 導入マシン）  
-6. エミュレータ手動チェックリスト  
+4. UI: **PRD-8 シナリオ**の手動チェックリスト（Mode A/B/C）  
+5. FUSE: macOS 手動（FUSE-T 導入マシン + 未導入マシン）  
+6. ドキュメント open: 拡張子ごとダブルクリック  
 
 ### 合格基準
 
 | 版 | 基準 |
 |----|------|
-| **0.1（現行ターゲット）** | ダブルクリックでメニューバー常駐; XDF/HDS を RO で Finder またはアプリ内から取り出し; 日本語名表示; FUSE 無しでも書き出し可; HDF unknown を誤マウントしない |
-| **将来・書込（deferred）** | 0.1 の合格条件ではない |
+| **0.1** | **PRD-8 全項目**。XDF/HDS を Finder で RO マウントし D&D コピー可。設定 + ログイン silent。取り出す。HDF 未知はマウントしない |
+| **将来・書込** | 0.1 対象外 |
 
 ---
 
@@ -1034,11 +1183,13 @@ erDiagram
 | OQ2 | DiskExplorer HDD と SASI/SCSI 差 | **Open** — OQ1 の残りと同時。HDS 側は `System.HDS` で scsitools モデル確認済 |
 | OQ3 | 非 1232K フロッピー | **Resolved for v0.1** |
 | OQ4 | Finder 書込時 rename | **Deferred** |
-| OQ5 | アプリ名 / バンドル ID | **Lean**: 表示名 `x68drv`、bundle `local.x68drv.app` 等は実装時確定 |
+| OQ5 | アプリ名 / バンドル ID | **Lean**: 表示名 `x68drv`。bundle id は実装時（例: 開発者ドメイン） |
 | OQ6 | ライセンス | **Resolved**: MIT |
 | OQ7 | タイムゾーン | **Resolved**: ローカル |
-| OQ8 | FUSE を v0.1 必須にするか | **Resolved lean**: **必須にしない**。Finder マウントは best-effort、ブラウザ FO 必須 |
-| OQ9 | Mac App Store | **Resolved lean**: **出さない**（FUSE/ヘルパと相性）。直配布 + 公証 |
+| OQ8 | FUSE を v0.1 必須にするか | **Resolved (Rev.6)**: **Finder 本線のため FUSE-T は実質必須**。未導入は導入案内。FO は救済 |
+| OQ9 | Mac App Store | **Resolved**: **出さない**。直配布 + 公証 |
+| OQ10 | マウントポイント命名 | **Open lean**: `/Volumes/x68drv-<name>` 案。実装時に衝突処理を固定 |
+| OQ11 | `.dim` を Document Type に含めるか | **Lean yes**（読取実装と同時） |
 
 ---
 
@@ -1070,11 +1221,11 @@ erDiagram
 - **タイトル**: `feat(core): XDF/DIM directory and file read`
 - **依存**: PR-04
 
-### PR-06: メニューバー殻 + ブラウザ FO
-- **タイトル**: `feat(app): MenuBarExtra shell, open image, in-app browser, export`
-- **対象**: `x68drv.app`（SwiftUI）
-- **依存**: PR-05
-- **内容**: LSUIElement、開く/最近、一覧、ホストへ書き出し。**FUSE なしでも価値が出る**
+### PR-06: アプリ殻（Mode A/B + メニューバー + 設定）
+- **タイトル**: `feat(app): normal app shell, settings, login item, menu bar`
+- **対象**: `x68drv.app`
+- **依存**: PR-05（読取ができること。マウントは次）
+- **内容**: **通常 app**（非 LSUIElement）。Mode A 設定ウィンドウ、Mode B Login Item、メニューバー（終了・設定）。Document Types の Info.plist 骨組み
 
 ### PR-07: SxSI ヘッダ / パーティション
 - **タイトル**: `feat(core): X68SCSI1/X68K and record addressing`
@@ -1098,11 +1249,11 @@ erDiagram
 - **タイトル**: `feat(core,app): fsck report in UI`
 - **依存**: PR-05, PR-08
 
-### PR-12: FUSE RO + Finder
-- **タイトル**: `feat(mount): RO FUSE-T helper and Show in Finder`
-- **対象**: `x68mount-helper`（バンドル内）、MountService
-- **依存**: PR-09
-- **内容**: 別プロセス、FUSE 未導入時は診断 UI。**HDF に依存しない**
+### PR-12: FUSE RO + Document open（Mode C）+ 取り出す
+- **タイトル**: `feat(mount): RO FUSE-T, open document, eject, Finder`
+- **対象**: `x68mount-helper`、MountService、`application open`
+- **依存**: PR-09, PR-06
+- **内容**: Mode C、マウントポイント、Finder open、取り出す、FUSE 未導入アラート。**PRD-8 の中核**
 
 ### PR-13: HDF 検出
 - **タイトル**: `feat(core): HDF classification using XM6 + real samples`
@@ -1210,6 +1361,7 @@ sequenceDiagram
 | **Rev.5.2** | 入口マップ・`disk/` 実測を `docs/` に記録。HDF クラス **`hdf-sasi-x68k-256`** を確定。design 調査 §1–3 と OQ1 を実測で更新 |
 | **Rev.5.3** | 参照ツリー `MPX68K` / `xm6_206s` と `disk/` をリポジトリ外（`.gitignore`）。ドキュメントのみ初期 commit |
 | **Rev.5.4** | `design.md` をリポジトリルートから **`docs/design.md`** へ移動 |
+| **Rev.6** | **Product Requirements**: 通常 GUI、起動3モード、Finder ダブルクリックで RO マウント、取り出す、設定最小 UI、FUSE-T 本線。LSUIElement 方針を撤回（KD-20） |
 
 ---
 
