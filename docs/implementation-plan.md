@@ -25,8 +25,8 @@ Phase 6  FUSE RO + Mode C + 取り出す  ★製品の核
 Phase 7  HDF 検証クラス + ローカル disk/ 回帰
 Phase 8  0.1 受け入れ（PRD-8）+ 配布メモ
 
-（バックログ）書込 Stage B+ / 自動更新 / 追加フォーマット  
-（実装済・実験）**書込 Stage A–C**: `HddInject` inject/delete/mkdir + パス対応 CLI（HDS/HDF。製品 FUSE 書込ではない）
+（バックログ）rename / 製品 UI 書込 / 自動更新 / 追加フォーマット  
+（実装済・実験）**書込 Stage A–D**: `HddInject` inject/delete/mkdir + `WritableHddSession` + FUSE `--experimental-write`（HDS/HDF。製品 UI 書込ではない）
 ```
 
 ### 依存関係（簡略）
@@ -369,8 +369,9 @@ flowchart LR
 
 | ID | 内容 | テスト方針 |
 |----|------|------------|
-| B1 | CLI/メニューからの inject 書込 | 合成 round-trip + fsck + 必須 backup |
-| B2 | FUSE 実験的書込 | クラッシュ注入・Finder rename |
+| B1 | CLI/メニューからの inject 書込 | ✅ Stage A–C + backup |
+| B2 | FUSE 実験的書込 | ✅ Stage D (`--experimental-write`; rename 未) |
+| B2b | FUSE rename + Finder 一時名 | 同一 dir rename |
 | B3 | 非 1232K フロッピー | ジオメトリ表 + テスト行列 |
 | B4 | HDF 他クラス | ゴールデン追加後のみ enable |
 | B5 | 自動更新 | 署名更新フロー |

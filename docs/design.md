@@ -83,7 +83,7 @@ X68000 エミュレータで用いるディスクイメージ（`.hdf` / `.hds` 
 | G-BROWSE | FUSE 未導入時の **緊急 FO**（アプリ内一覧 + 書き出し） | v0.1 推奨（本線ではない） |
 | G-CLI | （任意）開発用。**製品の主経路ではない** | テスト用 |
 | G-TEST | ゴールデン + 回帰テスト | 継続 |
-| G-WRITE | イメージへの書込 | **0.1 非対象**（実験 Stage A: CLI `inject --write` のみ・製品 UI/FUSE 外） |
+| G-WRITE | イメージへの書込 | **0.1 非対象**（実験 Stage A–D: CLI inject/delete/mkdir + FUSE `--experimental-write`・製品 UI 外） |
 
 ### Non-Goals（初期スコープ外） / 当面のスコープ境界
 
@@ -879,7 +879,7 @@ impl Human68kFs {
 |--------|------|--------|
 | （既定） | 読取専用 | 常時 |
 | `--write` / `-w` | **CLI 書込**（inject 等） | **当面未実装**（将来。実装後に安定化） |
-| `--experimental-write` | **`x68mount` 書込** | **当面未実装**（将来） |
+| `--experimental-write` | **`x68mount-helper` 書込** | **実験実装**（HDS/HDF: create/write/unlink/mkdir/truncate。rename 未。製品 UI からは未配線） |
 | `-o ro` / `-o rw` | mount ショートカット。当面 **`ro` のみ有効**。`rw` は未実装エラー | mount |
 | `--no-backup` | 書込時バックアップ省略 | 将来 |
 | `--force-dirty` | fsck 失敗でも書込 open | 将来 |

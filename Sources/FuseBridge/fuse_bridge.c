@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 #include <fuse.h>
 
@@ -16,6 +17,12 @@ static x68_readdir_fn g_readdir;
 static x68_open_fn g_open;
 static x68_read_fn g_read;
 static x68_release_fn g_release;
+
+static x68_write_fn g_write;
+static x68_create_fn g_create;
+static x68_unlink_fn g_unlink;
+static x68_mkdir_fn g_mkdir;
+static x68_truncate_fn g_truncate;
 
 struct filler_pack {
     fuse_fill_dir_t filler;
@@ -34,6 +41,20 @@ void x68_fuse_set_callbacks(
     g_open = open_fn;
     g_read = read_fn;
     g_release = release_fn;
+}
+
+void x68_fuse_set_write_callbacks(
+    x68_write_fn write_fn,
+    x68_create_fn create_fn,
+    x68_unlink_fn unlink_fn,
+    x68_mkdir_fn mkdir_fn,
+    x68_truncate_fn truncate_fn
+) {
+    g_write = write_fn;
+    g_create = create_fn;
+    g_unlink = unlink_fn;
+    g_mkdir = mkdir_fn;
+    g_truncate = truncate_fn;
 }
 
 int x68_fuse_add_direntry(void *filler_ctx, const char *name) {
@@ -62,13 +83,13 @@ static int op_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 static int op_open(const char *path, struct fuse_file_info *fi) {
     if (!g_open) return -EIO;
-    /* Read-only */
-    if ((fi->flags & O_ACCMODE) != O_RDONLY) return -EROFS;
+    /* Read-only unless write callbacks are installed */
+    if ((fi->flags & O_ACCMODE) != O_RDONLY && !g_write) return -EROFS;
     uint64_t fh = 0, size = 0;
-    int rc = g_open(path, &fh, &size);
+    int rc = g_open(path, fi->flags, &fh, &size);
     if (rc != 0) return rc;
     fi->fh = fh;
-    fi->keep_cache = 1;
+    fi->keep_cache = g_write ? 0 : 1;
     return 0;
 }
 
@@ -87,28 +108,39 @@ static int op_release(const char *path, struct fuse_file_info *fi) {
 
 static int op_write(const char *path, const char *buf, size_t size, off_t offset,
                     struct fuse_file_info *fi) {
-    (void)path; (void)buf; (void)size; (void)offset; (void)fi;
-    return -EROFS;
+    (void)path;
+    if (!g_write) return -EROFS;
+    return g_write(fi->fh, buf, size, offset);
 }
 
 static int op_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
-    (void)path; (void)mode; (void)fi;
-    return -EROFS;
+    if (!g_create) return -EROFS;
+    uint64_t fh = 0;
+    int rc = g_create(path, mode, &fh);
+    if (rc != 0) return rc;
+    fi->fh = fh;
+    fi->keep_cache = 0;
+    return 0;
 }
 
 static int op_unlink(const char *path) {
-    (void)path;
-    return -EROFS;
+    if (!g_unlink) return -EROFS;
+    return g_unlink(path);
 }
 
 static int op_mkdir(const char *path, mode_t mode) {
-    (void)path; (void)mode;
-    return -EROFS;
+    if (!g_mkdir) return -EROFS;
+    return g_mkdir(path, mode);
 }
 
 static int op_truncate(const char *path, off_t size) {
-    (void)path; (void)size;
-    return -EROFS;
+    if (!g_truncate) return -EROFS;
+    return g_truncate(path, size);
+}
+
+static int op_ftruncate(const char *path, off_t size, struct fuse_file_info *fi) {
+    (void)fi;
+    return op_truncate(path, size);
 }
 
 static struct fuse_operations x68_ops = {
@@ -122,6 +154,7 @@ static struct fuse_operations x68_ops = {
     .unlink = op_unlink,
     .mkdir = op_mkdir,
     .truncate = op_truncate,
+    .ftruncate = op_ftruncate,
 };
 
 static void try_load_fuse_libs(void) {

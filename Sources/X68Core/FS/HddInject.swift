@@ -2,13 +2,16 @@ import Foundation
 
 /// Experimental write helpers for Human68k HDD volumes (HDS/HDF, BE FAT16).
 ///
-/// **Not** product FUSE write. Mutates a full image buffer and returns it.
+/// Mutates a full image buffer and returns it (ordered flush).
+/// Used by CLI `--write` and by `WritableHddSession` (FUSE `--experimental-write`).
+/// **Not** product UI write.
 ///
 /// - **Inject**: data clusters → FAT → directory entry
 /// - **Delete**: directory 0xE5 → free FAT
 /// - **Mkdir**: dir cluster (`.` / `..`) → FAT → parent entry
 ///
 /// Stage A/B: root. Stage C: subdirectories + path-aware inject/delete.
+/// Stage D: FUSE adapter (`WritableHddSession` + helper).
 public enum HddInject {
     public struct Result: Equatable, Sendable {
         public var remoteName: String

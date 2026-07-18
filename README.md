@@ -28,10 +28,13 @@ swift test
 # Dev CLI (list / export / fsck / detect / experimental inject)
 swift run x68drv-tool list path/to/disk.xdf
 swift run x68drv-tool fsck path/to/disk.hds
-# Experimental write (HDS/HDF — copy the image first!)
+# Experimental write via CLI (HDS/HDF — copy the image first!)
 swift run x68drv-tool mkdir --write disk.hds SUB
 swift run x68drv-tool inject --write disk.hds ./local.bin SUB/HELLO.BIN
 swift run x68drv-tool delete --write disk.hds SUB/HELLO.BIN
+
+# Experimental FUSE write (HDS/HDF only; creates .x68drv-bak, exclusive lock)
+swift run x68mount-helper copy-of-disk.hds /tmp/x68mnt --experimental-write
 
 # App
 xcodebuild -project x68drv.xcodeproj -scheme x68drv -configuration Debug -destination 'platform=macOS' build

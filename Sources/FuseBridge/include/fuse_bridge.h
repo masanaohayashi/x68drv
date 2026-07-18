@@ -3,6 +3,7 @@
 
 #include <sys/stat.h>
 #include <stdint.h>
+#include <sys/types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,9 +11,16 @@ extern "C" {
 
 typedef int (*x68_getattr_fn)(const char *path, struct stat *stbuf);
 typedef int (*x68_readdir_fn)(const char *path, void *buf, void *filler_ctx);
-typedef int (*x68_open_fn)(const char *path, uint64_t *out_fh, uint64_t *out_size);
+/** flags: open(2) flags (O_RDONLY / O_WRONLY / O_RDWR / O_CREAT etc.). */
+typedef int (*x68_open_fn)(const char *path, int flags, uint64_t *out_fh, uint64_t *out_size);
 typedef int (*x68_read_fn)(uint64_t fh, char *buf, size_t size, off_t offset);
 typedef int (*x68_release_fn)(uint64_t fh);
+
+typedef int (*x68_write_fn)(uint64_t fh, const char *buf, size_t size, off_t offset);
+typedef int (*x68_create_fn)(const char *path, mode_t mode, uint64_t *out_fh);
+typedef int (*x68_unlink_fn)(const char *path);
+typedef int (*x68_mkdir_fn)(const char *path, mode_t mode);
+typedef int (*x68_truncate_fn)(const char *path, off_t size);
 
 /** Register Swift/C callbacks. Call before x68_fuse_run. */
 void x68_fuse_set_callbacks(
@@ -21,6 +29,15 @@ void x68_fuse_set_callbacks(
     x68_open_fn open_fn,
     x68_read_fn read_fn,
     x68_release_fn release_fn
+);
+
+/** Optional write ops. NULL → EROFS. Call after set_callbacks when experimental-write. */
+void x68_fuse_set_write_callbacks(
+    x68_write_fn write_fn,
+    x68_create_fn create_fn,
+    x68_unlink_fn unlink_fn,
+    x68_mkdir_fn mkdir_fn,
+    x68_truncate_fn truncate_fn
 );
 
 /**
