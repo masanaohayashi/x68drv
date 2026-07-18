@@ -25,6 +25,10 @@ open x68drv.xcodeproj
 # Unit tests (X68Core)
 swift test
 
+# Dev CLI (list / export / fsck / detect)
+swift run x68drv-tool list path/to/disk.xdf
+swift run x68drv-tool fsck path/to/disk.hds
+
 # App
 xcodebuild -project x68drv.xcodeproj -scheme x68drv -configuration Debug -destination 'platform=macOS' build
 ```

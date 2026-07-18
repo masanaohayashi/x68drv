@@ -209,22 +209,24 @@ flowchart LR
 
 | ID | タスク | 完了条件 |
 |----|--------|----------|
-| T4.1 | `DiskImage.open(url) -> MountableVolume...` 統合 API | XDF/HDS/DIM |
-| T4.2 | magic-first 検出（design フローチャート） | |
-| T4.3 | `export` / `list` の安定 Swift API | |
-| T4.4 | fsck(RO): FAT ループ、クロスリンク、size 矛盾 | レポート struct |
-| T4.5 | （任意）開発用 `x68drv-tool list/export` | テスト容易性 |
-| T4.6 | （任意）oracle スクリプト: scsitools 出力と比較 | CI skip if missing |
+| T4.1 | `DiskImage.open` 統合 API | ✅ XDF/HDS/DIM（HDF は Phase 7） |
+| T4.2 | magic-first 検出 | ✅ `ImageDetector` |
+| T4.3 | `ReadableVolume` list/read/export | ✅ |
+| T4.4 | fsck(RO): cycle / crossLink / shortChain | ✅ |
+| T4.5 | `x68drv-tool` detect/list/export/fsck | ✅ |
+| T4.6 | oracle vs scsitools | 未（任意・後回し） |
 
 ### テスト（必須）
 
-| テスト ID | 内容 |
-|-----------|------|
-| U4.open_matrix | 合成 XDF/HDS/DIM を open |
-| U4.fsck_clean | 正常合成 → ok |
-| U4.fsck_dirty | 壊した FAT → issues 非空 |
-| U4.unknown | ランダムバイト → unknown、マウント不可 |
-| I4.oracle | ツールがあれば list 比較（skip 可） |
+| テスト ID | 内容 | 状態 |
+|-----------|------|------|
+| U4.open_matrix | 合成 XDF/HDS/DIM | ✅ |
+| U4.fsck_clean | 正常合成 | ✅ |
+| U4.fsck_dirty | cycle / shortChain | ✅ |
+| U4.unknown | 拒否 | ✅ |
+| I4.oracle | scsitools | 未 |
+
+**Phase 4 完了**（2026-07-18）: `swift test` 35 tests pass。
 
 ---
 

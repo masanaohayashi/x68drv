@@ -101,7 +101,43 @@ public final class FloppyVolume: @unchecked Sendable {
         try data.write(to: url, options: .atomic)
     }
 
+    public func listEntries(path: HumanPath = HumanPath()) throws -> [VolumeEntry] {
+        try list(path: path).map {
+            VolumeEntry(name: $0.name, isDirectory: $0.isDirectory, size: $0.size)
+        }
+    }
+
+    public func fsck() throws -> FsckReport {
+        let files = try collectFsckFiles(path: HumanPath(), prefix: "")
+        return FsckRunner.run(
+            files: files,
+            chain: { try self.fat.chain(from: $0) },
+            bytesPerCluster: bpb.bytesPerCluster
+        )
+    }
+
     // MARK: - Internals
+
+    private func collectFsckFiles(path: HumanPath, prefix: String) throws -> [FsckRunner.FileRef] {
+        var result: [FsckRunner.FileRef] = []
+        let entries = try directoryEntries(path: path)
+        for e in entries {
+            guard e.isFile || e.isDirectory else { continue }
+            if e.name.display == "." || e.name.display == ".." { continue }
+            let display = prefix.isEmpty ? e.name.display : "\(prefix)/\(e.name.display)"
+            result.append(FsckRunner.FileRef(
+                path: display,
+                firstCluster: Int(e.firstCluster),
+                size: Int(e.size),
+                isDirectory: e.isDirectory
+            ))
+            if e.isDirectory {
+                let childPath = HumanPath(components: path.components + [e.name])
+                result.append(contentsOf: try collectFsckFiles(path: childPath, prefix: display))
+            }
+        }
+        return result
+    }
 
     private func directoryEntries(path: HumanPath) throws -> [DirEntry] {
         if path.components.isEmpty {
