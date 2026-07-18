@@ -76,8 +76,15 @@ flowchart LR
 
 ### テスト
 
-- [ ] CI で空の `X68CoreTests` が pass  
-- [ ] ローカル `swift test` が pass  
+- [x] ローカル `swift test` が pass（Phase 0 実装時点）  
+- [x] `xcodebuild -scheme x68drv` が BUILD SUCCEEDED（Phase 0 実装時点）  
+- [ ] CI で green（push 後確認）  
+
+### 実装メモ（2026-07-18）
+
+- **`x68drv.xcodeproj`** を最初の成果物として追加（通常 macOS app + local package `X68Core`）
+- App 殻: 設定ウィンドウ骨格 + メニューバー + Document Types の Info.plist 骨組み
+- 次: Phase 1（endian / path / 合成フィクスチャ）
 
 ### 参照
 

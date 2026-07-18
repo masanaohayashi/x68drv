@@ -10,6 +10,16 @@
 .idea/
 .vscode/
 *.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+xcuserdata/
 DerivedData/
 .build/
+.swiftpm/config/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .codebase-memory/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
