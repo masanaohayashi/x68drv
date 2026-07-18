@@ -174,29 +174,30 @@ flowchart LR
 
 | ID | タスク | 完了条件 |
 |----|--------|----------|
-| T3.1 | `X68SCSI1` ヘッダ解析（block size フィールド等） | |
-| T3.2 | `X68K` @ LBA4×phys（512 既定）パーティション表 | start/count BE |
-| T3.3 | boot = start × **1024**（record）で BPB | System.HDS と整合 |
-| T3.4 | BE BPB @ boot+0x12、media 0xF7 系 | |
-| T3.5 | FAT16 BE チェーン + readdir/read/export | |
-| T3.6 | 複数パーティション列挙 API | 既定 index 0 |
+| T3.1 | `X68SCSI1` ヘッダ解析 | ✅ `SxSIHeader` |
+| T3.2 | `X68K` パーティション表 | ✅ |
+| T3.3 | boot = start × 1024 | ✅ |
+| T3.4 | BE BPB @ +0x12 | ✅ `HddBPB` |
+| T3.5 | FAT16 BE + list/read/export | ✅ `HddVolume` |
+| T3.6 | 複数パーティション | ✅ `HdsImage.openVolume(index:)` |
 
 ### テスト（必須）
 
-| テスト ID | 内容 |
-|-----------|------|
-| U3.header | 合成 HDS: magic / X68K@0x800 |
-| U3.part0 | start=32 → boot@0x8000 の合成 |
-| U3.list_be | 合成上の SJIS 名ファイル list |
-| U3.read_export | export バイト一致 |
-| U3.multi_part | 2 パーティション合成で index 0/1 |
-| I3.local_system_hds | **任意・ローカル**: `disk/System.HDS` list が空でない / 既知名があれば一致 |
-| U3.wrong_endian | LE として読まない（意図的壊テスト） |
+| テスト ID | 内容 | 状態 |
+|-----------|------|------|
+| U3.header / part0 | 合成 HDS magic / start=32 | ✅ |
+| U3.list_be / read_export | 合成ファイル | ✅ |
+| U3.multi_part | 2 パーティション | ✅ |
+| U3.wrong_endian | FAT16 BE≠LE | ✅ |
+| I3.local_system_hds | `disk/System.HDS` | ✅ ローカル pass |
+
+**Phase 3 完了**（2026-07-18）: `swift test` 30 tests pass。
 
 ### 参照
 
 - `design.md` HDS record addressing  
 - `disk-samples-verification.md` §5  
+
 
 ---
 
