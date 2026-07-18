@@ -173,22 +173,47 @@ final class AppModel: ObservableObject {
     }
 
     func eject(id: UUID) {
-        do {
-            try mountService.eject(id: id)
-            mounts = mountService.mounts
-            lastDocumentMessage = "Ejected"
-        } catch {
-            lastError = error.localizedDescription
+        lastError = nil
+        lastDocumentMessage = "Ejecting…"
+        // Detach immediately in the service; run slow umount/kill off the main thread
+        // so the menu bar does not freeze (looked like "cannot eject").
+        let service = mountService
+        Task.detached(priority: .userInitiated) {
+            do {
+                try service.eject(id: id)
+                await MainActor.run {
+                    self.mounts = service.mounts
+                    self.lastDocumentMessage = "Ejected"
+                    self.lastError = nil
+                }
+            } catch {
+                let msg = Self.errorMessage(error)
+                await MainActor.run {
+                    self.mounts = service.mounts
+                    self.lastError = msg
+                    self.lastDocumentMessage = nil
+                }
+            }
         }
     }
 
     func ejectAll() {
-        do {
-            try mountService.ejectAll()
-            mounts = mountService.mounts
-        } catch {
-            lastError = error.localizedDescription
-            mounts = mountService.mounts
+        lastError = nil
+        lastDocumentMessage = "Ejecting all…"
+        let service = mountService
+        Task.detached(priority: .userInitiated) {
+            do {
+                try service.ejectAll()
+            } catch {
+                // ejectAll is best-effort; still refresh UI
+            }
+            // Also reclaim any stuck NFS leftovers Finder left behind.
+            _ = service.reclaimOrphans()
+            await MainActor.run {
+                self.mounts = service.mounts
+                self.lastDocumentMessage = "Ejected"
+                self.lastError = nil
+            }
         }
     }
 
@@ -225,7 +250,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private static func errorMessage(_ error: Error) -> String {
+    nonisolated private static func errorMessage(_ error: Error) -> String {
         if let e = error as? X68Error { return e.message }
         if let e = error as? LocalizedError, let d = e.errorDescription { return d }
         return error.localizedDescription

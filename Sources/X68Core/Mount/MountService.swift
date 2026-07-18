@@ -165,21 +165,28 @@ public final class MountService: @unchecked Sendable {
     }
 
     public func eject(id: UUID) throws {
+        // Detach from in-memory tables first so the UI never keeps a "stuck" mount
+        // while unmount/kill runs (can take several seconds).
         lock.lock()
-        defer { lock.unlock() }
         guard let idx = mounts.firstIndex(where: { $0.id == id }) else {
+            lock.unlock()
             throw X68Error.io("Mount not found")
         }
-        let record = mounts[idx]
-        try tearDown(record)
-        mounts.remove(at: idx)
+        let record = mounts.remove(at: idx)
+        let proc = fuseProcesses.removeValue(forKey: record.id)
+        lock.unlock()
+
+        tearDownDetached(record: record, process: proc)
     }
 
     public func eject(sourceURL: URL, partitionIndex: Int = 0) throws {
         let std = sourceURL.standardizedFileURL
-        guard let record = mounts.first(where: {
+        lock.lock()
+        let record = mounts.first {
             $0.sourceURL.standardizedFileURL == std && $0.partitionIndex == partitionIndex
-        }) else {
+        }
+        lock.unlock()
+        guard let record else {
             throw X68Error.io("Mount not found for \(sourceURL.lastPathComponent)")
         }
         try eject(id: record.id)
@@ -192,18 +199,9 @@ public final class MountService: @unchecked Sendable {
         mounts = []
         fuseProcesses = [:]
         lock.unlock()
-        var firstError: Error?
         for record in copy {
-            if let p = procs[record.id], p.isRunning {
-                p.terminate()
-            }
-            do {
-                try tearDownFiles(record, forceUnmount: record.backend == .fuse)
-            } catch {
-                if firstError == nil { firstError = error }
-            }
+            tearDownDetached(record: record, process: procs[record.id])
         }
-        if let firstError { throw firstError }
     }
 
     public func existingMount(for sourceURL: URL, partitionIndex: Int = 0) -> MountRecord? {
@@ -282,22 +280,32 @@ public final class MountService: @unchecked Sendable {
         }
         arguments.append(contentsOf: ["-o", fuseOpts])
 
+        // Capture early stderr to a temp file (not a Pipe). A full Pipe buffer
+        // blocks the helper forever and freezes Finder eject / umount.
+        let errLog = fileManager.temporaryDirectory
+            .appendingPathComponent("x68mount-\(UUID().uuidString).log")
+        fileManager.createFile(atPath: errLog.path, contents: nil)
+        let errHandle = try FileHandle(forWritingTo: errLog)
+
         let process = Process()
         process.executableURL = helper
         process.arguments = arguments
-        let errPipe = Pipe()
-        process.standardError = errPipe
+        process.standardError = errHandle
         process.standardOutput = FileHandle.nullDevice
+        // Detach from our process group so SIGTERM on the app doesn't leave a
+        // half-dead NFS mount; we manage lifecycle via fuseProcesses.
+        process.qualityOfService = .userInitiated
 
         try process.run()
+        try? errHandle.close()
 
         // Wait until the path appears in the mount table (empty dir is NOT enough).
         let deadline = Date().addingTimeInterval(10)
         var mounted = false
         while Date() < deadline {
             if !process.isRunning {
-                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-                let errText = String(data: errData, encoding: .utf8) ?? ""
+                let errText = (try? String(contentsOf: errLog, encoding: .utf8)) ?? ""
+                try? fileManager.removeItem(at: errLog)
                 try? fileManager.removeItem(at: mountURL)
                 throw X68Error.io("FUSE helper exited early: \(errText)")
             }
@@ -308,14 +316,11 @@ public final class MountService: @unchecked Sendable {
             Thread.sleep(forTimeInterval: 0.1)
         }
 
+        try? fileManager.removeItem(at: errLog)
+
         if !mounted {
-            process.terminate()
-            // Best-effort unmount if half-attached
-            let umount = Process()
-            umount.executableURL = URL(fileURLWithPath: "/sbin/umount")
-            umount.arguments = [mountURL.path]
-            try? umount.run()
-            umount.waitUntilExit()
+            terminateHelperProcess(process)
+            unmountPath(mountURL)
             try? fileManager.removeItem(at: mountURL)
             throw X68Error.io("Timed out waiting for FUSE mount at \(mountURL.path)")
         }
@@ -401,30 +406,50 @@ public final class MountService: @unchecked Sendable {
         )
     }
 
-    private func tearDown(_ record: MountRecord) throws {
-        if let proc = fuseProcesses.removeValue(forKey: record.id), proc.isRunning {
-            proc.terminate()
-            // Brief wait so FUSE-T can exit cleanly before umount.
-            let deadline = Date().addingTimeInterval(1.5)
-            while proc.isRunning, Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.05)
+    /// Unmount + kill helper. Best-effort: never throws (callers already detached record).
+    ///
+    /// Order matters for FUSE-T (NFS): **unmount first**, then stop helper. Killing the
+    /// helper while the NFS mount is busy often leaves a stuck volume that Finder
+    /// cannot eject.
+    private func tearDownDetached(record: MountRecord, process: Process?) {
+        if record.backend == .fuse {
+            // 1) Ask the volume to go away (helper should exit when fuse_main returns).
+            unmountPath(record.mountURL)
+            // 2) Wait briefly for clean helper exit.
+            if let proc = process, proc.isRunning {
+                waitForProcessExit(proc, timeout: 1.0)
             }
-            if proc.isRunning {
-                proc.terminate() // already sent; macOS has no Process.interrupt reliably → kill via signal
-                kill(proc.processIdentifier, SIGKILL)
+            // 3) Force-kill leftover helper (and its process group if possible).
+            if let proc = process, proc.isRunning {
+                terminateHelperProcess(proc)
             }
+            // 4) Second unmount pass after helper death.
+            unmountPath(record.mountURL)
+        } else if let proc = process, proc.isRunning {
+            terminateHelperProcess(proc)
         }
-        try tearDownFiles(record, forceUnmount: record.backend == .fuse)
+
+        removeMountDirectory(record.mountURL)
     }
 
-    private func tearDownFiles(_ record: MountRecord, forceUnmount: Bool = false) throws {
+    private func tearDownFiles(_ record: MountRecord, forceUnmount: Bool = false) {
         if forceUnmount || record.backend == .fuse {
             unmountPath(record.mountURL)
         }
-        guard fileManager.fileExists(atPath: record.mountURL.path) else { return }
+        removeMountDirectory(record.mountURL)
+    }
+
+    private func removeMountDirectory(_ url: URL) {
+        guard fileManager.fileExists(atPath: url.path) else { return }
         // Snapshots are chmod 0555; bump perms so delete works.
-        try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: record.mountURL.path)
-        try fileManager.removeItem(at: record.mountURL)
+        try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        if let enumerator = fileManager.enumerator(atPath: url.path) {
+            for case let rel as String in enumerator {
+                let full = (url.path as NSString).appendingPathComponent(rel)
+                try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: full)
+            }
+        }
+        try? fileManager.removeItem(at: url)
     }
 
     private func unmountPath(_ url: URL) {
@@ -432,17 +457,42 @@ public final class MountService: @unchecked Sendable {
         // Skip if nothing is mounted here (avoids hanging umount on plain folders).
         guard isPathMounted(url) else { return }
 
-        runProcessWithTimeout(
-            executable: "/sbin/umount",
-            arguments: [path],
-            timeout: 2
-        )
+        // Soft → hard escalation (each call is time-bounded).
+        runProcessWithTimeout(executable: "/sbin/umount", arguments: [path], timeout: 1.5)
+        if isPathMounted(url) {
+            runProcessWithTimeout(executable: "/sbin/umount", arguments: ["-f", path], timeout: 1.5)
+        }
         if isPathMounted(url) {
             runProcessWithTimeout(
                 executable: "/usr/sbin/diskutil",
                 arguments: ["unmount", "force", path],
-                timeout: 3
+                timeout: 2.5
             )
+        }
+        if isPathMounted(url) {
+            // Last resort: some FUSE-T builds respond better to umount -f -l semantics;
+            // macOS umount has -f only.
+            runProcessWithTimeout(executable: "/sbin/umount", arguments: ["-f", path], timeout: 1.0)
+        }
+    }
+
+    private func waitForProcessExit(_ proc: Process, timeout: TimeInterval) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while proc.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+    }
+
+    private func terminateHelperProcess(_ proc: Process) {
+        let pid = proc.processIdentifier
+        guard pid > 0 else { return }
+        // Kill the helper process only (not -pid group: Foundation.Process is not
+        // always a group leader; killing the group can hit unrelated PIDs).
+        kill(pid, SIGTERM)
+        waitForProcessExit(proc, timeout: 0.8)
+        if proc.isRunning {
+            kill(pid, SIGKILL)
+            waitForProcessExit(proc, timeout: 0.3)
         }
     }
 
