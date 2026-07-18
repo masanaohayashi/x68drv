@@ -238,27 +238,30 @@ flowchart LR
 
 | ID | タスク | 完了条件 |
 |----|--------|----------|
-| T5.1 | Xcode app target `x68drv`（非 LSUIElement） | ビルド成功 |
-| T5.2 | `LaunchRouter`（A/B/C 判定の骨格。C は stub） | ユニット or 軽いロジックテスト |
-| T5.3 | 設定ウィンドウ: バージョン + ログイン時起動 + OK | |
-| T5.4 | `SMAppService` ログイン項目 | トグルが状態を反映 |
-| T5.5 | メニューバー: 設定… / 終了 / プレースホルダ | |
-| T5.6 | Document Types を Info.plist に登録（open は log のみ可） | |
-| T5.7 | 単一インスタンス（2 重起動しない） | |
+| T5.1 | Xcode app target `x68drv`（非 LSUIElement） | ✅ |
+| T5.2 | `LaunchRouter`（A/B/C。C は stub） | ✅ + unit tests |
+| T5.3 | 設定: バージョン + Open at Login + OK | ✅ |
+| T5.4 | `SMAppService` ログイン項目 | ✅ `LoginItemService` |
+| T5.5 | メニューバー: Settings / Open Image / Quit | ✅ |
+| T5.6 | Document Types + open stub | ✅ |
+| T5.7 | `LSMultipleInstancesProhibited` + reopen → settings | ✅ |
 
 ### テスト
 
-| テスト ID | 内容 | 種別 |
-|-----------|------|------|
-| U5.launch_mode | 入力フラグ → Mode A/B/C の分岐表 | Unit（LaunchRouter） |
-| M5.mode_a | .app 起動 → 設定が出る → OK → アプリ生存 → メニューから終了 | **手動** |
-| M5.mode_b | ログイン項目 ON → 再ログイン → 設定が出ない・メニューバーのみ | **手動** |
-| M5.settings_ok | OK で終了しない | **手動** |
-| M5.login_toggle | トグルが System Settings と矛盾しない | **手動** |
+| テスト ID | 内容 | 種別 | 状態 |
+|-----------|------|------|------|
+| U5.launch_mode | Mode A/B/C 分岐 | Unit | ✅ |
+| M5.mode_a | 起動→設定→OK→生存→終了 | **手動** | 要確認 |
+| M5.mode_b | ログイン silent | **手動** | 要確認 |
+| M5.settings_ok | OK で終了しない | **手動** | 要確認 |
+| M5.login_toggle | System Settings 連携 | **手動** | 要確認 |
+
+**Phase 5 完了（コード）**（2026-07-18）: `swift test` 39 pass、`xcodebuild` SUCCESS。手動 M5 はユーザー確認。
 
 ### 参照
 
 - `design.md` PRD-1〜4, 7 / KD-20,22,23  
+
 
 ---
 

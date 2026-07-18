@@ -2,8 +2,10 @@ import SwiftUI
 import AppKit
 import X68Core
 
-/// Minimal preferences / about window (PRD-3).
+/// Preferences / about window (PRD-3).
 struct SettingsView: View {
+    @EnvironmentObject private var model: AppModel
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("x68drv")
@@ -17,27 +19,45 @@ struct SettingsView: View {
                     .textSelection(.enabled)
             }
 
-            Text("Open X68000 disk images (.xdf / .hds / .hdf) in Finder after FUSE-T is available. v0.1 is read-only.")
+            Text("Open X68000 disk images (.xdf / .hds / .hdf / .dim) from Finder. v0.1 is read-only; FUSE-T is required for mounting (Phase 6).")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Login-item toggle lands in Phase 5 (SMAppService).
-            Toggle("Open at Login", isOn: .constant(false))
-                .disabled(true)
-                .help("Implemented in Phase 5")
+            Toggle("Open at Login", isOn: $model.openAtLogin)
+
+            Text(model.loginItemStatusText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if let err = model.loginItemError {
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            if let msg = model.lastDocumentMessage {
+                Text(msg)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+            }
 
             HStack {
                 Spacer()
                 Button("OK") {
-                    // PRD: OK closes the window; it does not quit the app.
+                    // PRD: close window only; do not quit.
+                    model.closeSettings()
                     NSApp.keyWindow?.close()
                 }
                 .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
-        .frame(minWidth: 320)
+        .frame(minWidth: 340)
+        .onAppear {
+            model.refreshLoginItemState()
+        }
     }
 
     private var appVersion: String {
@@ -49,4 +69,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+        .environmentObject(AppModel.shared)
 }

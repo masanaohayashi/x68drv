@@ -26,7 +26,10 @@
 	<string>NSApplication</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<!-- Document types expanded in Phase 5/6. Skeleton for .xdf/.hds/.hdf. -->
+	<!-- Single instance: hand re-opens to the running app. -->
+	<key>LSMultipleInstancesProhibited</key>
+	<true/>
+	<!-- Document types for Finder open (Mode C). -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
