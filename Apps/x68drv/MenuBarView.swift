@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import X68Core
 
-/// Menu bar content (PRD-4 + Phase 6 mounts).
+/// Menu bar content (PRD-4 + mounts).
 struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openWindow) private var openWindow
@@ -28,14 +28,15 @@ struct MenuBarView: View {
                 .disabled(true)
         } else {
             ForEach(model.mounts) { mount in
-                Menu(mount.displayName) {
+                Menu(mountLabel(mount)) {
                     Button("Show in Finder") {
                         model.revealInFinder(id: mount.id)
                     }
                     Button("Eject") {
                         model.eject(id: mount.id)
                     }
-                    Text(mount.backend == .snapshot ? "Temporary folder" : "FUSE")
+                    Text(mount.mountURL.path)
+                        .font(.caption)
                         .disabled(true)
                 }
             }
@@ -64,6 +65,15 @@ struct MenuBarView: View {
         Button("Quit x68drv") {
             model.ejectAll()
             NSApp.terminate(nil)
+        }
+    }
+
+    private func mountLabel(_ mount: MountRecord) -> String {
+        switch mount.backend {
+        case .fuse:
+            return "\(mount.displayName) [/Volumes]"
+        case .snapshot:
+            return "\(mount.displayName) [folder]"
         }
     }
 

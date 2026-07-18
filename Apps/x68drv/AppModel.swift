@@ -32,10 +32,6 @@ final class AppModel: ObservableObject {
 
     @Published var wantsSettingsWindow: Bool = false
 
-    /// Show emergency export browser (Phase 6 FO).
-    @Published var browseVolume: (any ReadableVolume)?
-    @Published var browseTitle: String = ""
-
     private var didFinishRouting = false
     private var launchedAsLoginItem = false
     private var suppressLoginItemWrite = false
@@ -115,11 +111,13 @@ final class AppModel: ObservableObject {
             }
             let record = try mountService.mount(url: url, partitionIndex: partitionIndex)
             mounts = mountService.mounts
-            let backendNote = record.backend == .snapshot
-                ? " (temporary folder; install FUSE-T for live mount later)"
-                : ""
-            lastDocumentMessage = "Mounted \(record.displayName)\(backendNote)"
-            log.info("Mounted \(record.displayName, privacy: .public) at \(record.mountURL.path, privacy: .public)")
+            switch record.backend {
+            case .fuse:
+                lastDocumentMessage = "Mounted \(record.displayName) as volume \(record.mountURL.path)"
+            case .snapshot:
+                lastDocumentMessage = "Opened \(record.displayName) as temporary folder (install FUSE-T for /Volumes mount)"
+            }
+            log.info("Mounted \(record.displayName, privacy: .public) backend=\(record.backend.rawValue, privacy: .public)")
             if revealInFinder {
                 NSWorkspace.shared.open(record.mountURL)
             }
@@ -157,11 +155,12 @@ final class AppModel: ObservableObject {
     }
 
     func refreshFuseStatus() {
+        let helper = mountService.helperExecutable()?.path ?? "helper not built (swift build --product x68mount-helper)"
         switch mountService.fuseStatus() {
         case let .available(detail):
-            fuseStatusText = "FUSE: available (\(detail))"
+            fuseStatusText = "FUSE: available (\(detail)); helper: \(helper)"
         case let .unavailable(reason):
-            fuseStatusText = "FUSE: not found — using temporary folder mounts. \(reason)"
+            fuseStatusText = "FUSE: not installed — temporary folders. \(reason)"
         }
     }
 

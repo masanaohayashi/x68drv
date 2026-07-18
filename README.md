@@ -44,11 +44,26 @@ Apps/x68drv/          # SwiftUI app shell (settings + menu bar skeleton)
 docs/                 # design, research, implementation plan
 ```
 
-## Status
+## Mount modes (dual backend)
 
-Core can read **XDF / DIM / HDS**. The app mounts images by exporting a **temporary read-only folder** under Application Support and opening it in Finder (works without FUSE-T). Live FUSE is planned once FUSE-T + helper are available.
+| FUSE-T / macFUSE | Behavior |
+|------------------|----------|
+| **Installed** | Live RO mount under **`/Volumes/x68drv-…`** via `x68mount-helper` (Finder volume, drag-and-drop) |
+| **Not installed** | Temporary **snapshot folder** under Application Support (still works for copy-out) |
+
+```bash
+# Build the FUSE helper (links symbols at runtime; needs FUSE-T installed to actually mount)
+swift build --product x68mount-helper
+
+# Optional CLI mount test
+swift run x68drv-tool mount path/to/disk.xdf
+```
+
+Install FUSE-T: https://www.fuse-t.org/  
+(or `brew install macos-fuse-t/cask/fuse-t` — needs admin password)
 
 See [`docs/implementation-plan.md`](docs/implementation-plan.md).
+
 
 ## License
 

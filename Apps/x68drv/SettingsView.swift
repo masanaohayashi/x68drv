@@ -19,7 +19,7 @@ struct SettingsView: View {
                     .textSelection(.enabled)
             }
 
-            Text("Open .xdf / .hds / .hdf / .dim from Finder or the menu. v0.1 is read-only. Images are currently opened as temporary folders under Application Support (live FUSE mount when FUSE-T + helper are available).")
+            Text("With FUSE-T installed, images mount under /Volumes like a normal disk. Without it, x68drv opens a temporary folder (still works for copy-out).")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -61,7 +61,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 360)
+        .frame(minWidth: 380)
         .onAppear {
             model.refreshLoginItemState()
             model.refreshFuseStatus()

@@ -273,28 +273,27 @@ flowchart LR
 
 | ID | タスク | 完了条件 |
 |----|--------|----------|
-| T6.1 | FUSE helper | **Deferred** — 差し込み口のみ（未インストール環境） |
-| T6.2 | `MountService` 命名・上限 8・状態 | ✅ |
-| T6.3 | Mode C: open → mount → Finder | ✅ **snapshot backend** |
-| T6.4 | メニュー: 表示 / 取り出す / すべて | ✅ |
-| T6.5 | FUSE 検出 + ステータス / 導入リンク | ✅ |
-| T6.6 | スナップショットは静的 export（イメージへは書かない） | ✅ |
-| T6.7 | 一時フォルダマウント（Finder で D&D 可） | ✅ 現行 backend |
-| T6.8 | 同一パス再 open → remount せず Finder | ✅ |
+| T6.1 | `x68mount-helper` + FuseBridge (libfuse RO) | ✅ ランタイム dlopen |
+| T6.2 | `MountService` 命名・上限 8 | ✅ |
+| T6.3 | Mode C + **dual backend** | ✅ FUSE 優先 → snapshot フォールバック |
+| T6.4 | メニュー 表示/Eject | ✅ `[/Volumes]` vs `[folder]` 表示 |
+| T6.5 | FUSE 検出 + 導入リンク | ✅ |
+| T6.6 | FUSE write → EROFS | ✅ fuse_bridge.c |
+| T6.7 | snapshot FO | ✅ FUSE 無し時 |
+| T6.8 | 同一パス reuse | ✅ |
 
-**実装メモ**: 本機に FUSE-T が無いため、v0.1 は  
-`~/Library/Application Support/x68drv/Mounts/…` に **読み取りスナップショットを展開**して Finder で開く。  
-ライブ FUSE は helper 追加時に `MountBackend.fuse` へ切替予定。
+**デュアルモード**:
+1. FUSE-T あり + helper 成功 → `/Volumes/x68drv-…`  
+2. それ以外 → Application Support スナップショット  
 
 ### テスト
 
 | テスト ID | 内容 | 種別 | 状態 |
 |-----------|------|------|------|
-| U6.mount_point | 命名・衝突 suffix | Unit | ✅ |
-| U6 mount/export/reuse/eject | MountService | Unit | ✅ |
-| M6.prd8_* | Finder 手動 | **手動** | 要確認 |
+| U6 mount/* | snapshot 経路 | Unit | ✅ |
+| M6 FUSE | FUSE-T 導入後の /Volumes | **手動** | 要 FUSE-T インストール |
 
-**Phase 6 完了（実用パス）**（2026-07-18）: snapshot mount + UI。`swift test` 43 pass。
+**Phase 6 dual-backend**（2026-07-18）: `swift test` 48 pass、helper ビルド可。
 
 ### 参照
 
