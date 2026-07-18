@@ -150,7 +150,7 @@ final class AppModel: ObservableObject {
                     "Mounted \(record.displayName) writable (experimental) — image is modified; backup .x68drv-bak"
             case (.fuse, false) where experimentalWriteMount:
                 lastDocumentMessage =
-                    "Mounted \(record.displayName) read-only (write mount is HDS/HDF only)"
+                    "Mounted \(record.displayName) read-only (write not available for this format)"
             case (.fuse, false):
                 lastDocumentMessage = "Mounted \(record.displayName) as live volume (read-only)"
             case (.snapshot, _):

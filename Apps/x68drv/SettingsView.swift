@@ -47,10 +47,10 @@ struct SettingsView: View {
 
             Text(
                 """
-                Off by default. When on, new mounts of .hds / .hdf use FUSE with \
+                Off by default. When on, new mounts of .hds / .hdf / .xdf / .dim use FUSE with \
                 write enabled (creates a .x68drv-bak next to the image on first change). \
-                XDF/DIM stay unsupported for write. Snapshot folder mounts never write the image. \
-                Prefer a copy of the image. Rename in Finder may be incomplete.
+                Snapshot folder mounts never write the image. Prefer a copy of the image. \
+                Eject from the menu bar after writing.
                 """
             )
             .font(.caption)

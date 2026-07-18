@@ -33,8 +33,9 @@ swift run x68drv-tool mkdir --write disk.hds SUB
 swift run x68drv-tool inject --write disk.hds ./local.bin SUB/HELLO.BIN
 swift run x68drv-tool delete --write disk.hds SUB/HELLO.BIN
 
-# Experimental FUSE write (HDS/HDF only; creates .x68drv-bak, exclusive lock)
+# Experimental FUSE write (HDS/HDF/XDF/DIM; creates .x68drv-bak, exclusive lock)
 swift run x68mount-helper copy-of-disk.hds /tmp/x68mnt --experimental-write
+swift run x68mount-helper copy-of.xdf /tmp/x68mnt --experimental-write
 
 # App
 xcodebuild -project x68drv.xcodeproj -scheme x68drv -configuration Debug -destination 'platform=macOS' build

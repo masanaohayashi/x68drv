@@ -1,0 +1,436 @@
+import Foundation
+
+/// Experimental write helpers for Human68k floppy volumes (XDF/DIM, LE FAT12).
+///
+/// Ordered flush: data → FAT → directory entry (same as HddInject).
+public enum FloppyInject {
+    public struct Result: Equatable, Sendable {
+        public var remoteName: String
+        public var bytesWritten: Int
+        public var firstCluster: Int
+        public var clusterCount: Int
+        public var overwritten: Bool
+    }
+
+    public struct DeleteResult: Equatable, Sendable {
+        public var remoteName: String
+        public var freedClusters: Int
+    }
+
+    public struct MkdirResult: Equatable, Sendable {
+        public var remoteName: String
+        public var firstCluster: Int
+    }
+
+    // MARK: - Inject
+
+    public static func injectFile(
+        imageData: Data,
+        path: HumanPath,
+        contents: Data,
+        overwrite: Bool = false
+    ) throws -> (image: Data, result: Result) {
+        guard let leaf = path.components.last else {
+            throw X68Error.filesystem("Empty inject path")
+        }
+        let parentPath = HumanPath(components: Array(path.components.dropLast()))
+        var image = imageData
+        var ctx = try volumeContext(image: image)
+        let parent = try resolveDirectory(image: image, ctx: &ctx, path: parentPath)
+
+        let scan = try scanDirTable(image: image, ctx: ctx, table: parent, match: leaf)
+        var fat = ctx.fat
+        var overwritten = false
+        var slot = scan.freeSlot
+
+        if let existing = scan.existingFile {
+            guard overwrite else {
+                throw X68Error.filesystem(
+                    "File exists: \(path.display) (pass overwrite to replace)"
+                )
+            }
+            if existing.entry.firstCluster >= 2 {
+                let old = try fat.chain(from: Int(existing.entry.firstCluster))
+                try fat.freeChain(old)
+            }
+            slot = existing.offset
+            overwritten = true
+        } else if scan.existingDir != nil {
+            throw X68Error.filesystem("Path is a directory: \(leaf.display)")
+        }
+
+        guard let slotOffset = slot else {
+            throw X68Error.limit("Directory full: \(parentPath.display.isEmpty ? "/" : parentPath.display)")
+        }
+
+        let bpc = ctx.bpb.bytesPerCluster
+        let clusterCount = contents.isEmpty ? 0 : (contents.count + bpc - 1) / bpc
+        let chain: [Int]
+        if clusterCount == 0 {
+            chain = []
+        } else {
+            chain = try fat.allocateChain(count: clusterCount)
+        }
+
+        try writeClusterPayload(image: &image, ctx: ctx, chain: chain, contents: contents)
+        writeFAT(image: &image, ctx: ctx, fat: fat)
+
+        let first: UInt16 = chain.first.map { UInt16($0) } ?? 0
+        let packed = try DirEntry.pack(
+            name: leaf,
+            attributes: 0x20,
+            firstCluster: first,
+            size: UInt32(contents.count)
+        )
+        image.replaceSubrange(slotOffset..<(slotOffset + DirEntry.size), with: packed)
+
+        return (
+            image,
+            Result(
+                remoteName: path.display,
+                bytesWritten: contents.count,
+                firstCluster: Int(first),
+                clusterCount: chain.count,
+                overwritten: overwritten
+            )
+        )
+    }
+
+    // MARK: - Delete
+
+    public static func deleteFile(
+        imageData: Data,
+        path: HumanPath
+    ) throws -> (image: Data, result: DeleteResult) {
+        guard let leaf = path.components.last else {
+            throw X68Error.filesystem("Empty delete path")
+        }
+        let parentPath = HumanPath(components: Array(path.components.dropLast()))
+        var image = imageData
+        var ctx = try volumeContext(image: image)
+        let parent = try resolveDirectory(image: image, ctx: &ctx, path: parentPath)
+        let scan = try scanDirTable(image: image, ctx: ctx, table: parent, match: leaf)
+
+        guard let target = scan.existingFile else {
+            if scan.existingDir != nil {
+                throw X68Error.filesystem("Refusing to delete directory: \(path.display)")
+            }
+            throw X68Error.filesystem("File not found: \(path.display)")
+        }
+
+        var fat = ctx.fat
+        var slot = image.subdata(in: target.offset..<(target.offset + DirEntry.size))
+        slot = DirEntry.markDeleted(slot)
+        image.replaceSubrange(target.offset..<(target.offset + DirEntry.size), with: slot)
+
+        var freed = 0
+        if target.entry.firstCluster >= 2 {
+            let chain = try fat.chain(from: Int(target.entry.firstCluster))
+            try fat.freeChain(chain)
+            freed = chain.count
+        }
+        writeFAT(image: &image, ctx: ctx, fat: fat)
+
+        return (image, DeleteResult(remoteName: path.display, freedClusters: freed))
+    }
+
+    // MARK: - Mkdir
+
+    public static func mkdir(
+        imageData: Data,
+        parentPath: HumanPath = HumanPath(),
+        name: HumanFileName
+    ) throws -> (image: Data, result: MkdirResult) {
+        var image = imageData
+        var ctx = try volumeContext(image: image)
+        let parent = try resolveDirectory(image: image, ctx: &ctx, path: parentPath)
+        let parentCluster: UInt16 = {
+            switch parent {
+            case .root: return 0
+            case .clusters(let c, _): return UInt16(c.first ?? 0)
+            }
+        }()
+
+        let scan = try scanDirTable(image: image, ctx: ctx, table: parent, match: name)
+        if scan.existingFile != nil || scan.existingDir != nil {
+            throw X68Error.filesystem("Already exists: \(name.display)")
+        }
+        guard let slot = scan.freeSlot else {
+            throw X68Error.limit("Directory full")
+        }
+
+        var fat = ctx.fat
+        let chain = try fat.allocateChain(count: 1)
+        let dirCluster = chain[0]
+        let bpc = ctx.bpb.bytesPerCluster
+
+        var dirData = Data(count: bpc)
+        let dot = try DirEntry.pack(
+            name: HumanFileName(stem: ".", ext: ""),
+            attributes: 0x10,
+            firstCluster: UInt16(dirCluster),
+            size: 0
+        )
+        let dotdot = try DirEntry.pack(
+            name: HumanFileName(stem: "..", ext: ""),
+            attributes: 0x10,
+            firstCluster: parentCluster,
+            size: 0
+        )
+        dirData.replaceSubrange(0..<DirEntry.size, with: dot)
+        dirData.replaceSubrange(DirEntry.size..<(2 * DirEntry.size), with: dotdot)
+
+        let sector = ctx.bpb.firstDataSector + (dirCluster - 2) * ctx.bpb.sectorsPerCluster
+        let abs = ctx.volStart + sector * ctx.bpb.bytesPerSector
+        guard abs + bpc <= image.count else {
+            throw X68Error.outOfBounds(offset: abs, size: bpc, available: image.count)
+        }
+        image.replaceSubrange(abs..<(abs + bpc), with: dirData)
+        writeFAT(image: &image, ctx: ctx, fat: fat)
+
+        let packed = try DirEntry.pack(
+            name: name,
+            attributes: 0x10,
+            firstCluster: UInt16(dirCluster),
+            size: 0
+        )
+        image.replaceSubrange(slot..<(slot + DirEntry.size), with: packed)
+
+        let display = parentPath.components.isEmpty
+            ? name.display
+            : "\(parentPath.display)/\(name.display)"
+        return (image, MkdirResult(remoteName: display, firstCluster: dirCluster))
+    }
+
+    // MARK: - Rename (same parent)
+
+    public static func renameFile(
+        imageData: Data,
+        from: HumanPath,
+        to: HumanPath
+    ) throws -> Data {
+        guard let fromLeaf = from.components.last, let toLeaf = to.components.last else {
+            throw X68Error.filesystem("Empty rename path")
+        }
+        let fromParent = HumanPath(components: Array(from.components.dropLast()))
+        let toParent = HumanPath(components: Array(to.components.dropLast()))
+        guard fromParent == toParent else {
+            throw X68Error.unsupported("Cross-directory rename not supported yet")
+        }
+        if namesEqual(fromLeaf, toLeaf) { return imageData }
+
+        var image = imageData
+        var ctx = try volumeContext(image: image)
+        let parent = try resolveDirectory(image: image, ctx: &ctx, path: fromParent)
+        let fromScan = try scanDirTable(image: image, ctx: ctx, table: parent, match: fromLeaf)
+        guard let source = fromScan.existingFile else {
+            if fromScan.existingDir != nil {
+                throw X68Error.unsupported("Directory rename not supported yet")
+            }
+            throw X68Error.filesystem("File not found: \(from.display)")
+        }
+        let toScan = try scanDirTable(image: image, ctx: ctx, table: parent, match: toLeaf)
+        if toScan.existingFile != nil || toScan.existingDir != nil {
+            throw X68Error.filesystem("Already exists: \(to.display)")
+        }
+
+        let entry = source.entry
+        let packed = try DirEntry.pack(
+            name: toLeaf,
+            attributes: entry.attributes,
+            firstCluster: entry.firstCluster,
+            size: entry.size
+        )
+        image.replaceSubrange(source.offset..<(source.offset + DirEntry.size), with: packed)
+        return image
+    }
+
+    // MARK: - Directory helpers
+
+    private enum DirTable {
+        case root
+        case clusters([Int], entryCapacity: Int)
+    }
+
+    private struct ScanResult {
+        var freeSlot: Int?
+        var existingFile: (offset: Int, entry: DirEntry)?
+        var existingDir: (offset: Int, entry: DirEntry)?
+    }
+
+    private static func resolveDirectory(
+        image: Data,
+        ctx: inout VolumeContext,
+        path: HumanPath
+    ) throws -> DirTable {
+        if path.components.isEmpty { return .root }
+        var table: DirTable = .root
+        for component in path.components {
+            let scan = try scanDirTable(image: image, ctx: ctx, table: table, match: component)
+            guard let dir = scan.existingDir else {
+                throw X68Error.filesystem("Directory not found: \(component.display)")
+            }
+            let start = Int(dir.entry.firstCluster)
+            guard start >= 2 else {
+                throw X68Error.filesystem("Invalid directory cluster for \(component.display)")
+            }
+            let chain = try ctx.fat.chain(from: start)
+            let cap = (chain.count * ctx.bpb.bytesPerCluster) / DirEntry.size
+            table = .clusters(chain, entryCapacity: cap)
+        }
+        return table
+    }
+
+    private static func scanDirTable(
+        image: Data,
+        ctx: VolumeContext,
+        table: DirTable,
+        match: HumanFileName
+    ) throws -> ScanResult {
+        var freeSlot: Int?
+        var existingFile: (offset: Int, entry: DirEntry)?
+        var existingDir: (offset: Int, entry: DirEntry)?
+
+        let entryCount: Int
+        switch table {
+        case .root:
+            entryCount = ctx.rootBytes / DirEntry.size
+        case .clusters(_, let cap):
+            entryCount = cap
+        }
+
+        for i in 0..<entryCount {
+            let abs = try entryAbsoluteOffset(image: image, ctx: ctx, table: table, index: i)
+            let entry = try DirEntry.parse(image, at: abs)
+            if entry.isEnd {
+                if freeSlot == nil { freeSlot = abs }
+                break
+            }
+            if entry.isDeleted {
+                if freeSlot == nil { freeSlot = abs }
+                continue
+            }
+            if namesEqual(entry.name, match) {
+                if entry.isFile {
+                    existingFile = (abs, entry)
+                } else if entry.isDirectory {
+                    existingDir = (abs, entry)
+                }
+            }
+        }
+        return ScanResult(freeSlot: freeSlot, existingFile: existingFile, existingDir: existingDir)
+    }
+
+    private static func entryAbsoluteOffset(
+        image: Data,
+        ctx: VolumeContext,
+        table: DirTable,
+        index: Int
+    ) throws -> Int {
+        switch table {
+        case .root:
+            return ctx.rootAbs + index * DirEntry.size
+        case .clusters(let chain, _):
+            let byteOff = index * DirEntry.size
+            let bpc = ctx.bpb.bytesPerCluster
+            let ci = byteOff / bpc
+            let within = byteOff % bpc
+            guard ci < chain.count else {
+                throw X68Error.filesystem("Directory index out of range")
+            }
+            let cluster = chain[ci]
+            let sector = ctx.bpb.firstDataSector + (cluster - 2) * ctx.bpb.sectorsPerCluster
+            return ctx.volStart + sector * ctx.bpb.bytesPerSector + within
+        }
+    }
+
+    private static func writeClusterPayload(
+        image: inout Data,
+        ctx: VolumeContext,
+        chain: [Int],
+        contents: Data
+    ) throws {
+        let bpc = ctx.bpb.bytesPerCluster
+        for (i, cluster) in chain.enumerated() {
+            let sector = ctx.bpb.firstDataSector + (cluster - 2) * ctx.bpb.sectorsPerCluster
+            let offset = ctx.volStart + sector * ctx.bpb.bytesPerSector
+            guard offset + bpc <= image.count else {
+                throw X68Error.outOfBounds(offset: offset, size: bpc, available: image.count)
+            }
+            let start = i * bpc
+            let end = min(start + bpc, contents.count)
+            var chunk = Data(count: bpc)
+            if start < end {
+                chunk.replaceSubrange(0..<(end - start), with: contents[start..<end])
+            }
+            image.replaceSubrange(offset..<(offset + bpc), with: chunk)
+        }
+    }
+
+    private static func writeFAT(image: inout Data, ctx: VolumeContext, fat: FAT12) {
+        image.replaceSubrange(ctx.fat1Abs..<(ctx.fat1Abs + ctx.fatBytes), with: fat.table)
+        if ctx.bpb.fatCount >= 2 {
+            image.replaceSubrange(ctx.fat2Abs..<(ctx.fat2Abs + ctx.fatBytes), with: fat.table)
+        }
+    }
+
+    // MARK: - Volume context
+
+    private struct VolumeContext {
+        var volStart: Int
+        var bpb: FloppyBPB
+        var fatBytes: Int
+        var fat1Abs: Int
+        var fat2Abs: Int
+        var fat: FAT12
+        var rootAbs: Int
+        var rootBytes: Int
+    }
+
+    private static func volumeContext(image: Data) throws -> VolumeContext {
+        let detection = ImageDetector.detect(data: image)
+        guard detection.kind == .xdf || detection.kind == .dim else {
+            throw X68Error.unsupported(
+                "Floppy write helpers support XDF/DIM only (got \(detection.kind.rawValue))"
+            )
+        }
+        let volStart = detection.volumeOffset
+        guard volStart < image.count else {
+            throw X68Error.format("volumeOffset beyond image")
+        }
+        let volumeSlice = image.subdata(in: volStart..<image.count)
+        let bpb = try FloppyBPB.parse(volume: volumeSlice, allow2HDFallback: true)
+        let fatBytes = bpb.fatSizeSectors * bpb.bytesPerSector
+        let fat1Abs = volStart + bpb.reservedSectors * bpb.bytesPerSector
+        let fat2Abs = fat1Abs + fatBytes
+        guard fat1Abs + fatBytes <= image.count else {
+            throw X68Error.format("FAT region out of range")
+        }
+        // Data clusters: from firstDataSector to end of volume.
+        let dataSectors = max(0, bpb.totalSectors - bpb.firstDataSector)
+        let maxClusters = max(2, 1 + dataSectors / max(1, bpb.sectorsPerCluster))
+        let fat = FAT12(
+            table: image.subdata(in: fat1Abs..<(fat1Abs + fatBytes)),
+            maxClusters: maxClusters
+        )
+        let rootAbs = volStart + bpb.rootDirOffset
+        let rootBytes = bpb.rootEntryCount * DirEntry.size
+        guard rootAbs + rootBytes <= image.count else {
+            throw X68Error.format("Root directory out of range")
+        }
+        return VolumeContext(
+            volStart: volStart,
+            bpb: bpb,
+            fatBytes: fatBytes,
+            fat1Abs: fat1Abs,
+            fat2Abs: fat2Abs,
+            fat: fat,
+            rootAbs: rootAbs,
+            rootBytes: rootBytes
+        )
+    }
+
+    private static func namesEqual(_ a: HumanFileName, _ b: HumanFileName) -> Bool {
+        a.stem.uppercased() == b.stem.uppercased() && a.ext.uppercased() == b.ext.uppercased()
+    }
+}

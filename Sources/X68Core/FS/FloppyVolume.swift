@@ -116,6 +116,17 @@ public final class FloppyVolume: @unchecked Sendable {
         )
     }
 
+    public func spaceInfo() throws -> VolumeSpaceInfo {
+        let free = try fat.countFreeClusters()
+        let total = fat.dataClusterCount
+        let bpc = UInt64(max(1, bpb.bytesPerCluster))
+        return VolumeSpaceInfo(
+            blockSize: bpc,
+            totalBlocks: UInt64(max(0, total)),
+            freeBlocks: UInt64(max(0, free))
+        )
+    }
+
     // MARK: - Internals
 
     private func collectFsckFiles(path: HumanPath, prefix: String) throws -> [FsckRunner.FileRef] {

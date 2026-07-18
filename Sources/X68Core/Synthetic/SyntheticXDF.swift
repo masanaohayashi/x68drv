@@ -82,6 +82,11 @@ public enum SyntheticXDF {
     }
 
     private static func writeEmptyFAT12(to image: inout Data, at offset: Int, media: UInt8) {
+        // Zero the whole FAT (2 sectors) so free clusters read as 0, not 0xE5 fill.
+        let fatBytes = bytesPerSector * 2
+        for i in 0..<fatBytes {
+            image[offset + i] = 0
+        }
         // Media + 0xFFF for cluster 0/1
         image[offset] = media
         image[offset + 1] = 0xFF

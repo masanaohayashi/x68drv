@@ -26,7 +26,7 @@ Phase 7  HDF 検証クラス + ローカル disk/ 回帰
 Phase 8  0.1 受け入れ（PRD-8）+ 配布メモ
 
 （バックログ）rename / 製品 UI 書込 / 自動更新 / 追加フォーマット  
-（実装済・実験）**書込 Stage A–D**: `HddInject` inject/delete/mkdir + `WritableHddSession` + FUSE `--experimental-write`（HDS/HDF。製品 UI 書込ではない）
+（実装済・実験）**書込 Stage A–D + XDF**: `HddInject` / `FloppyInject` + FUSE `--experimental-write`（HDS/HDF/XDF/DIM。製品 UI は Settings トグル）
 ```
 
 ### 依存関係（簡略）

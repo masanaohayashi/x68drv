@@ -101,11 +101,11 @@ public final class MountService: @unchecked Sendable {
         let disk = try DiskImage.open(url: standardized)
         _ = try disk.openVolume(partitionIndex: partitionIndex)
 
-        // Write mode only for HDS/HDF. Other formats mount read-only (setting stays on).
+        // Write mode: HDS/HDF + XDF/DIM. Unknown stays RO.
         let writeEligible: Bool = {
             guard experimentalWrite else { return false }
             switch disk.detection.kind {
-            case .hds, .hdf: return true
+            case .hds, .hdf, .xdf, .dim: return true
             default: return false
             }
         }()
@@ -124,7 +124,7 @@ public final class MountService: @unchecked Sendable {
                     )
                 } catch {
                     if writeEligible {
-                        // HDS/HDF write intent must not silently become a RO folder.
+                        // Write intent must not silently become a RO folder.
                         throw error
                     }
                     fputs("x68drv: FUSE mount failed (\(error)); falling back to snapshot\n", stderr)
@@ -139,7 +139,8 @@ public final class MountService: @unchecked Sendable {
                     stderr
                 )
             }
-        } else if writeEligible {
+        } else if writeEligible, preferFuse {
+            // User asked for write via FUSE but FUSE is missing.
             let reason: String
             if case .unavailable(let r) = fuse {
                 reason = r
@@ -152,6 +153,7 @@ public final class MountService: @unchecked Sendable {
         }
 
         if record == nil {
+            // Snapshot is always read-only materialization (even if write flag is on).
             record = try mountWithSnapshot(
                 imageURL: standardized,
                 partitionIndex: partitionIndex,

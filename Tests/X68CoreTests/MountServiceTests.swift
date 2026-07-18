@@ -70,8 +70,8 @@ final class MountServiceTests: XCTestCase {
         XCTAssertTrue(service.mounts.isEmpty)
     }
 
-    /// Experimental write on XDF still mounts read-only (write is HDS/HDF only).
-    func testExperimentalWriteFallsBackROForFloppy() throws {
+    /// Experimental write is eligible for XDF; snapshot path stays non-write (no FUSE).
+    func testExperimentalWriteXDFEligibleButSnapshotIsRO() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("x68-ew-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)

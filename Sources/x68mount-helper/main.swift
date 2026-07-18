@@ -68,7 +68,7 @@ enum X68MountHelper {
 
         do {
             if experimentalWrite {
-                let session = try WritableHddSession.open(
+                let session = try WritableSession.open(
                     url: URL(fileURLWithPath: imagePath),
                     partitionIndex: partition,
                     requireCleanFsck: true,
@@ -208,7 +208,7 @@ final class FuseSession: @unchecked Sendable {
 
     private enum Backend {
         case readOnly(any ReadableVolume)
-        case writable(WritableHddSession)
+        case writable(WritableSession)
     }
 
     private struct OpenHandle {
@@ -240,7 +240,7 @@ final class FuseSession: @unchecked Sendable {
         x68_fuse_set_statfs_callback(x68_swift_statfs)
     }
 
-    func installWritable(session: WritableHddSession) {
+    func installWritable(session: WritableSession) {
         self.backend = .writable(session)
         x68_fuse_set_callbacks(
             x68_swift_getattr,
