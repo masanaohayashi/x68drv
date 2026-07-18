@@ -326,32 +326,47 @@ final class FuseSession: @unchecked Sendable {
         }
     }
 
+    private func fillStat(
+        _ stbuf: UnsafeMutablePointer<stat>,
+        isDir: Bool,
+        size: off_t
+    ) {
+        // Permissive modes: FUSE-T/NFS + Finder treat tight modes as "no access"
+        // (grey icons / "読み出し権限がない").
+        let dirMode: mode_t = isWritable ? (S_IFDIR | 0o777) : (S_IFDIR | 0o555)
+        let fileMode: mode_t = isWritable ? (S_IFREG | 0o666) : (S_IFREG | 0o444)
+        memset(stbuf, 0, MemoryLayout<stat>.size)
+        stbuf.pointee.st_uid = getuid()
+        stbuf.pointee.st_gid = getgid()
+        stbuf.pointee.st_blksize = 1024
+        if isDir {
+            stbuf.pointee.st_mode = dirMode
+            stbuf.pointee.st_nlink = 2
+            stbuf.pointee.st_size = 0
+        } else {
+            stbuf.pointee.st_mode = fileMode
+            stbuf.pointee.st_nlink = 1
+            stbuf.pointee.st_size = size
+            stbuf.pointee.st_blocks = (size + 511) / 512
+        }
+    }
+
     fileprivate func getattr(_ cPath: UnsafePointer<CChar>?, _ stbuf: UnsafeMutablePointer<stat>?) -> Int32 {
         guard let cPath, let stbuf, backend != nil else { return -EIO }
         let pathStr = String(cString: cPath)
-        memset(stbuf, 0, MemoryLayout<stat>.size)
-
-        let dirMode: mode_t = isWritable ? (S_IFDIR | 0o755) : (S_IFDIR | 0o555)
-        let fileMode: mode_t = isWritable ? (S_IFREG | 0o644) : (S_IFREG | 0o444)
 
         if pathStr == "/" {
-            stbuf.pointee.st_mode = dirMode
-            stbuf.pointee.st_nlink = 2
-            stbuf.pointee.st_uid = getuid()
-            stbuf.pointee.st_gid = getgid()
+            fillStat(stbuf, isDir: true, size: 0)
             return 0
         }
 
-        // Dirty open handles win for size (Finder write-in-progress).
+        // Open handles win (create/write in progress — including non-dirty empty create).
         let hp = humanPath(from: pathStr)
         lock.lock()
-        if let open = openFiles.values.first(where: { $0.path == hp && $0.dirty }) {
-            stbuf.pointee.st_mode = fileMode
-            stbuf.pointee.st_nlink = 1
-            stbuf.pointee.st_uid = getuid()
-            stbuf.pointee.st_gid = getgid()
-            stbuf.pointee.st_size = off_t(open.data.count)
+        if let open = openFiles.values.first(where: { $0.path == hp }) {
+            let size = off_t(open.data.count)
             lock.unlock()
+            fillStat(stbuf, isDir: false, size: size)
             return 0
         }
         lock.unlock()
@@ -366,15 +381,10 @@ final class FuseSession: @unchecked Sendable {
             }) else {
                 return -ENOENT
             }
-            stbuf.pointee.st_uid = getuid()
-            stbuf.pointee.st_gid = getgid()
-            stbuf.pointee.st_nlink = 1
             if entry.isDirectory {
-                stbuf.pointee.st_mode = dirMode
-                stbuf.pointee.st_nlink = 2
+                fillStat(stbuf, isDir: true, size: 0)
             } else {
-                stbuf.pointee.st_mode = fileMode
-                stbuf.pointee.st_size = off_t(entry.size)
+                fillStat(stbuf, isDir: false, size: off_t(entry.size))
             }
             return 0
         } catch {
@@ -386,11 +396,46 @@ final class FuseSession: @unchecked Sendable {
         guard let cPath, let fillerCtx, backend != nil else { return -EIO }
         let pathStr = String(cString: cPath)
         let hp = humanPath(from: pathStr)
+        let uid = getuid()
+        let gid = getgid()
         do {
             let entries = try listEntries(path: hp)
+            // Overlay in-progress creates not yet visible on disk listing.
+            lock.lock()
+            let pending = openFiles.values.filter { open in
+                let parent = HumanPath(components: Array(open.path.components.dropLast()))
+                return parent == hp
+            }
+            lock.unlock()
+
+            var seen = Set<String>()
             for entry in entries {
-                entry.name.display.withCString { cstr in
-                    _ = x68_fuse_add_direntry(fillerCtx, cstr)
+                let name = entry.name.display
+                seen.insert(name.uppercased())
+                name.withCString { cstr in
+                    _ = x68_fuse_add_direntry_stat(
+                        fillerCtx,
+                        cstr,
+                        entry.isDirectory ? 1 : 0,
+                        UInt64(entry.size),
+                        uid,
+                        gid
+                    )
+                }
+            }
+            for open in pending {
+                guard let leaf = open.path.components.last else { continue }
+                let name = leaf.display
+                if seen.contains(name.uppercased()) { continue }
+                name.withCString { cstr in
+                    _ = x68_fuse_add_direntry_stat(
+                        fillerCtx,
+                        cstr,
+                        0,
+                        UInt64(open.data.count),
+                        uid,
+                        gid
+                    )
                 }
             }
             return 0
@@ -410,7 +455,7 @@ final class FuseSession: @unchecked Sendable {
         if pathStr == "/" { return -EISDIR }
         let hp = humanPath(from: pathStr)
         let acc = flags & O_ACCMODE
-        let wantWrite = acc == O_WRONLY || acc == O_RDWR
+        let wantWrite = acc == O_WRONLY || acc == O_RDWR || (flags & O_TRUNC) != 0
         if wantWrite && !isWritable { return -EROFS }
 
         do {
@@ -418,14 +463,18 @@ final class FuseSession: @unchecked Sendable {
             if (flags & O_TRUNC) != 0, wantWrite {
                 data = Data()
             } else {
-                do {
-                    data = try readVolumeFile(path: hp)
-                } catch {
-                    if wantWrite {
-                        // Allow open of missing file only when O_CREAT (create op handles that).
+                // Prefer an existing open handle (Finder often re-opens mid-copy).
+                lock.lock()
+                if let existing = openFiles.values.first(where: { $0.path == hp }) {
+                    data = existing.data
+                    lock.unlock()
+                } else {
+                    lock.unlock()
+                    do {
+                        data = try readVolumeFile(path: hp)
+                    } catch {
                         return -ENOENT
                     }
-                    return -ENOENT
                 }
             }
 
@@ -436,10 +485,11 @@ final class FuseSession: @unchecked Sendable {
             lock.lock()
             let fh = nextFH
             nextFH += 1
+            // O_WRONLY still needs a readable buffer for getattr/Finder; mark writable if requested.
             openFiles[fh] = OpenHandle(
                 path: hp,
                 data: data,
-                writable: wantWrite,
+                writable: wantWrite || isWritable,
                 dirty: wantWrite && (flags & O_TRUNC) != 0
             )
             lock.unlock()
@@ -482,10 +532,12 @@ final class FuseSession: @unchecked Sendable {
         guard isWritable else { return -EROFS }
         guard let buf, size >= 0, offset >= 0 else { return -EINVAL }
         lock.lock()
-        guard var handle = openFiles[fh], handle.writable else {
+        // Allow write even if open was O_RDONLY-ish when volume is writable (Finder quirks).
+        guard var handle = openFiles[fh] else {
             lock.unlock()
             return -EBADF
         }
+        handle.writable = true
         let end = Int(offset) + size
         if handle.data.count < end {
             handle.data.append(Data(count: end - handle.data.count))

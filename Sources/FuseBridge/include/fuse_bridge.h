@@ -61,8 +61,17 @@ void x68_fuse_set_write_callbacks(
  */
 int x68_fuse_run(int argc, char **argv);
 
-/** Helper for readdir: add a name to the directory listing. */
+/** Helper for readdir: add a name (optional mode/size for Finder permissions). */
 int x68_fuse_add_direntry(void *filler_ctx, const char *name);
+/** Prefer this so Finder sees mode/size immediately (avoids grey "no access" icons). */
+int x68_fuse_add_direntry_stat(
+    void *filler_ctx,
+    const char *name,
+    int is_dir,
+    uint64_t size,
+    uid_t uid,
+    gid_t gid
+);
 
 #ifdef __cplusplus
 }

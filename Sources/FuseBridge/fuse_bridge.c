@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include <fuse.h>
 
@@ -69,10 +70,61 @@ void x68_fuse_set_statfs_callback(x68_statfs_fn statfs_fn) {
 }
 
 int x68_fuse_add_direntry(void *filler_ctx, const char *name) {
+    return x68_fuse_add_direntry_stat(filler_ctx, name, 0, 0, 0, 0);
+}
+
+int x68_fuse_add_direntry_stat(
+    void *filler_ctx,
+    const char *name,
+    int is_dir,
+    uint64_t size,
+    uid_t uid,
+    gid_t gid
+) {
     struct filler_pack *p = (struct filler_pack *)filler_ctx;
     if (!p || !p->filler || !name) return -EINVAL;
+    struct stat st;
+    memset(&st, 0, sizeof(st));
+    if (is_dir) {
+        st.st_mode = S_IFDIR | 0777;
+        st.st_nlink = 2;
+    } else {
+        st.st_mode = S_IFREG | 0666;
+        st.st_nlink = 1;
+        st.st_size = (off_t)size;
+        st.st_blocks = (blkcnt_t)((size + 511) / 512);
+    }
+    st.st_uid = uid ? uid : getuid();
+    st.st_gid = gid ? gid : getgid();
+    st.st_blksize = 1024;
     /* macFUSE/fuse-t high-level filler: (buf, name, stbuf, off) */
-    return p->filler(p->buf, name, NULL, 0);
+    return p->filler(p->buf, name, &st, 0);
+}
+
+static int op_access(const char *path, int mask) {
+    (void)path;
+    (void)mask;
+    /* We do our own permission model; never return EACCES to Finder. */
+    return 0;
+}
+
+static int op_chmod(const char *path, mode_t mode) {
+    (void)path;
+    (void)mode;
+    return 0;
+}
+
+static int op_chown(const char *path, uid_t uid, gid_t gid) {
+    (void)path;
+    (void)uid;
+    (void)gid;
+    return 0;
+}
+
+static int op_utimens(const char *path, const struct timespec tv[2]) {
+    (void)path;
+    (void)tv;
+    return 0;
 }
 
 static int op_getattr(const char *path, struct stat *stbuf) {
@@ -194,6 +246,7 @@ static int op_statfs(const char *path, struct statvfs *stbuf) {
 
 static struct fuse_operations x68_ops = {
     .getattr = op_getattr,
+    .access = op_access,
     .readdir = op_readdir,
     .open = op_open,
     .read = op_read,
@@ -208,6 +261,9 @@ static struct fuse_operations x68_ops = {
     .flush = op_flush,
     .fsync = op_fsync,
     .statfs = op_statfs,
+    .chmod = op_chmod,
+    .chown = op_chown,
+    .utimens = op_utimens,
 };
 
 static void try_load_fuse_libs(void) {
