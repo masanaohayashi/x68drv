@@ -1,0 +1,256 @@
+# 手元ディスクイメージ突合記録
+
+| 項目 | 内容 |
+|------|------|
+| 日付 | 2026-07-18 |
+| 対象ディレクトリ | `disk/`（ローカル検証用。市販ダンプの公開同梱はしない） |
+| 突合相手 | XM6 / MPX68K 入口条件（[format-entry-points.md](format-entry-points.md)） |
+| 設計書 | [../design.md](../design.md) 調査結果 §1–3 を本結果で更新 |
+
+> 目的: 入口マップの条件が **実ファイルで通るか** を記録する。  
+> 方法: ファイルサイズ、先頭マジック、`X68K` / `Human68k` 位置、BPB 候補オフセットの静的解析。
+
+---
+
+## 1. ファイル一覧と判定
+
+| ファイル | サイズ (bytes) | hex | 形式判定 | 備考 |
+|----------|----------------|-----|----------|------|
+| `Human 68k v2.0 Disk 1.xdf` | 1,261,568 | `0x134000` | **XDF 2HD** | Hudson ブート |
+| `Human 68k v2.0 Disk 2.xdf` | 1,261,568 | `0x134000` | **XDF 2HD** | 標準 LE FAT12 |
+| `OSR2.xdf` | 1,261,568 | `0x134000` | **XDF 2HD** | Disk2 と同型 |
+| `HD.hdf` | 41,496,576 | `0x2793000` | **HDF SASI 40MB** | XM6 固定サイズ一致 |
+| `HD2.hdf` | 41,496,576 | `0x2793000` | **HDF SASI 40MB** | HD とレイアウト同・中身別 |
+| `System.HDS` | 209,715,200 | `0xc800000` | **HDS SxSI** | `X68SCSI1` コンテナ |
+
+---
+
+## 2. エミュ入口条件との突合
+
+### 2.1 XDF
+
+| 条件 | 出典 | Disk1 | Disk2 | OSR2 |
+|------|------|-------|-------|------|
+| size == 1,261,568 | XM6 `FDIDisk2HD::Open` | PASS | PASS | PASS |
+| 丸ごと 1232KB 読込 | MPX68K `XDF_SetFD` | PASS | PASS | PASS |
+| DIM `DIFC HEADER` @0xAB | — | 無 | 無 | 無 |
+
+**ジオメトリ（MPX68K `XDF_Read` と一致するモデル）**
+
+```text
+cyl 0..76, head 0..1, sector 1..8, n=3 (1024 bytes)
+pos = ((((c << 1) + h) * 8) + (r - 1)) << 10
+total = 154 tracks * 8 * 1024 = 1_261_568
+```
+
+### 2.2 HDF (SASI)
+
+| 条件 | 出典 | HD.hdf | HD2.hdf |
+|------|------|--------|---------|
+| size ∈ {0x9f5400, 0x13c9800, **0x2793000**} | XM6 `SASIHD::Open` | **40MB PASS** | **40MB PASS** |
+| size % 256 == 0 → sectors = size/256 | MPX68K `SASI_GetSectorCount` | 162,096 | 162,096 |
+| `X68SCSI1` 先頭 | HDS 用 | 無 | 無 |
+
+### 2.3 HDS (SCSI)
+
+| 条件 | 出典 | System.HDS |
+|------|------|------------|
+| size % 512 == 0 かつ 10MB〜4GB 帯 | XM6 `SCSIHD::Open` | PASS (200MB) |
+| magic `X68SCSI1` | MPX68K / scsitools | **PASS** |
+| `X68K` @ LBA4×512 = 0x800 | 同上 | **PASS** |
+
+---
+
+## 3. XDF 詳細
+
+### 3.1 Disk2 / OSR2（教科書的）
+
+先頭例 (`OSR2.xdf`):
+
+```text
+60 3c 90 58 36 38 49 50 4c 33 30 ...   ; BRA + "X68IPL30"
+```
+
+| LE BPB @0x0B | 値 |
+|--------------|-----|
+| bytes/sector | **1024** |
+| sectors/cluster | 1 |
+| reserved | 1 |
+| FATs | 2 |
+| root entries | 192 |
+| total sectors | 1232 |
+| media | **0xFE** |
+| FAT size (sectors) | 2 |
+
+```text
+root_dir_offset = (1 + 2*2) * 1024 = 0x1400
+```
+
+`OSR2.xdf` ルート先頭付近: `OSR2DSK`, `HUMAN.SYS` 等（ASCII 確認済み）。
+
+### 3.2 Disk1（Hudson ブート）
+
+```text
+60 1c 48 75 64 73 6f 6e 20 73 6f 66 74 20 32 2e ...  ; "Hudson soft 2."
+```
+
+- DOS 互換 BPB @0x0B は **正常値に見えない**（ブートコードと重なる）。
+- それでも **size は 1232K** のためエミュ open は成功する。
+- **標準 2HD ルート位置 0x1400** に `HUMAN.SYS` / `Human68k` 等のディレクトリ痕跡あり。
+
+**x68drv 実装メモ**: BPB パース失敗時は **2HD 既定ジオメトリ (bps=1024, res=1, 2FATs, fatsec=2, root=192)** でルートを試すフォールバックを推奨。
+
+---
+
+## 4. HDF 詳細（`HD.hdf` / `HD2.hdf`）
+
+### 4.1 物理レイアウト（実測）
+
+| オフセット | 内容 |
+|------------|------|
+| 0x0000 | ブートらしき `0x60 ...`（IPL）。**SCSI ヘッダ無し** |
+| **0x0400** | **`X68K`** パーティション表（= **LBA4 × 物理セクタ 256**） |
+| **0x0410** | エントリ `Human68k` |
+| | start **BE32 = 33** (`0x21`)、count BE32 = 162040 |
+| **0x2100** | パーティション boot = 33 × **256** |
+| 0x2112 付近 | BE BPB: **bytes/sector = 1024**, SPC=1 |
+
+先頭 16 バイト例:
+
+```text
+60 00 00 ca 00 00 00 00 00 00 00 00 00 00 00 00
+```
+
+### 4.2 二重セクタ構造（重要）
+
+| 層 | セクタ/単位 | 根拠 |
+|----|-------------|------|
+| SASI 物理（エミュがイメージを切る単位） | **256 B** | XM6 `disk.size=8`, MPX68K `size/256` |
+| パーティション表位置 | LBA4 × 256 = **0x400** | 実測 `X68K` |
+| Human68k FS 論理セクタ | **1024 B** | boot+0x12 の BE16 = 1024 |
+
+### 4.3 HD vs HD2
+
+| 項目 | 結果 |
+|------|------|
+| サイズ | 同一 (`0x2793000`) |
+| パーティション表位置・start | 同一パターン |
+| バイト内容 | **同一ではない**（差分多数）→ 別ディスク内容 |
+
+### 4.4 設計上のクラス名（確定寄り）
+
+手元 2 本は次のクラスとして記録する:
+
+```text
+hdf-sasi-x68k-256
+  - ヘッダ: 無し（非 X68SCSI1）
+  - 物理セクタ: 256
+  - パーティション表: offset = 4 * 256 = 0x400, magic X68K
+  - エントリ: 8B name + BE32 start + BE32 count（start は物理 256B LBA）
+  - ボリューム boot: start * 256
+  - FS BPB: BE, boot+0x12 に bps=1024
+  - XM6 サイズ: 本サンプルは 40MB 固定。他サイズは未検証
+```
+
+以前の仮説 `hdf-x68k-only`（0x800 に X68K）とは **オフセットが異なる**（0x400）。
+
+---
+
+## 5. HDS 詳細（`System.HDS`）
+
+### 5.1 ヘッダ（実測）
+
+```text
+offset 0:  "X68SCSI1"
+offset 8:  BE16 = 0x0200 (512)   ; bytes-per-record フィールド
+offset 10: ...
+offset 0x10: "Human68K SCSI-DISK by Keisoku Giken..."
+```
+
+先頭 16 バイト:
+
+```text
+58 36 38 53 43 53 49 31 02 00 00 06 3f ff 01 00
+X  6  8  S  C  S  I  1  .. .. .. .. .. .. .. ..
+```
+
+### 5.2 パーティション
+
+| オフセット | 内容 |
+|------------|------|
+| 0x0400 | IPL 領域（`0x60` 系） |
+| **0x0800** | **`X68K`**（LBA4 × **512**） |
+| **0x0810** | `Human68k` start **BE=32**, count BE=203776 |
+| **0x8000** | パーティション boot = **32 × 1024**（scsitools の典型 part0 と一致） |
+
+`0x800` 付近 raw（抜粋）:
+
+```text
+58 36 38 4b ... 48 75 6d 61 6e 36 38 6b 00 00 00 20 00 03 1c 00
+X  6  8  K     H  u  m  a  n  6  8  k  ... start=0x20 ...
+```
+
+### 5.3 ボリューム BPB @ 0x8000
+
+| 項目 | 値 |
+|------|-----|
+| OEM 風 | `SHARP/KG` |
+| BE bps @ boot+0x12 | **1024** |
+| SPC | **4** |
+| media | **0xF7** |
+
+### 5.4 設計との一致
+
+- `design.md` の HDS / scsitools レイアウトと **一致**。
+- MPX68K `SCSI_GetImageBlockSize` / `SCSI_ReadBPBFromImage` の前提と **一致**。
+- **ゴールデン最優先候補**。
+
+---
+
+## 6. 入口チェック総表
+
+| 条件 | XDF×3 | HD*.hdf | System.HDS |
+|------|-------|---------|------------|
+| XM6 `FDIDisk2HD` | PASS | — | — |
+| XM6 `SASIHD` 10/20/40 | — | **40MB PASS** | FAIL（想定どおり） |
+| XM6 `SCSIHD` サイズ帯 | FAIL | サイズだけ通る※ | PASS |
+| `X68SCSI1` | 無 | 無 | **有** |
+| `X68K` 位置 | 無 | **0x400** | **0x800** |
+| FS bps | 1024 LE（Disk2/OSR2） | 1024 BE | 1024 BE |
+| media | 0xFE（典型） | ~0xF8 | **0xF7** |
+
+※ 拡張子・物理セクタ・magic で HDF/HDS を分離すること。サイズ帯だけでは誤分類する。
+
+---
+
+## 7. x68drv への確定インサイト
+
+1. **XDF v0.1 = 1232K のみ**は手元 3/3 で支持。BPB 壊れ対策の 2HD 既定フォールバックを設計に含める。  
+2. **HDF クラス `hdf-sasi-x68k-256`** を G-HDF-b 第一候補にする（実測 2 本 + XM6 40MB）。  
+3. **HDS** は `System.HDS` をゴールデンの主軸。  
+4. **物理セクタ ≠ FS セクタ**を Volume / Partition モデルで分離:  
+   - SASI phys 256  
+   - SCSI header field 512  
+   - Human68k FS 1024  
+5. パーティション start の乗算単位:  
+   - HDF 実測: **start × 256** が boot  
+   - HDS 実測: **start × 1024** が boot（record 座標）
+
+---
+
+## 8. 未検証（次のスパイク）
+
+- [ ] 10MB / 20MB の XM6 固定 HDF  
+- [ ] 非 10/20/40MB の「ゆるい」HDF（MPX68K のみ）  
+- [ ] `X68K` が 0x800 にある SASI イメージの有無  
+- [ ] 複数パーティション HDS  
+- [ ] DIM サンプル（手元 `disk/` に無し）  
+- [ ] ルート一覧・ファイル extract のバイト一致（実装後）
+
+---
+
+## 9. 関連リンク
+
+- 入口関数: [format-entry-points.md](format-entry-points.md)  
+- 設計書: [../design.md](../design.md)  
+- 索引: [README.md](README.md)

@@ -1,0 +1,15 @@
+# Reference-only emulator sources (not part of this project; analyze offline)
+/MPX68K/
+/xm6_206s/
+
+# Local disk images for verification (may be copyrighted; do not publish)
+/disk/
+
+# macOS / tooling
+.DS_Store
+.idea/
+.vscode/
+*.xcuserstate
+DerivedData/
+.build/
+.codebase-memory/
