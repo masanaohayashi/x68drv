@@ -68,12 +68,18 @@ Install FUSE-T: https://www.fuse-t.org/
 
 ## Distribution (Hardened Runtime + notarization)
 
-**Not** App Sandbox / Mac App Store. Ship with Developer ID + Apple notarization.
+**Not** App Sandbox / Mac App Store. Ship with Developer ID + Apple notarization + GitHub Release.
+
+```bash
+# One-time notary profile + gh auth — see docs/distribution.md
+./scripts/release.sh --version 0.1.0
+```
+
+That builds Release, signs with Hardened Runtime, notarizes, zips, and uploads to [GitHub Releases](https://github.com/masanaohayashi/x68drv/releases).
 
 - Entitlements: `Apps/x68drv/x68drv.entitlements` (app), `x68mount-helper.entitlements` (helper)
 - Only special entitlement: `disable-library-validation` (load system FUSE-T framework)
 - Guide: [`docs/distribution.md`](docs/distribution.md)
-- Script: `./scripts/sign-and-notarize.sh --app …/x68drv.app --identity "Developer ID Application: …" --notary-profile x68drv-notary`
 
 See also [`docs/implementation-plan.md`](docs/implementation-plan.md).
 

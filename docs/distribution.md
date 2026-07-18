@@ -23,7 +23,41 @@ xcrun notarytool store-credentials "x68drv-notary" \
   --password "app-specific-password"
 ```
 
-## Build (Release)
+## One-shot release (recommended)
+
+Build Release → Hardened Runtime sign → notarize + staple → zip → **GitHub Release**:
+
+```bash
+# One-time: notary credentials (app-specific password from appleid.apple.com)
+xcrun notarytool store-credentials "x68drv-notary" \
+  --apple-id "you@example.com" \
+  --team-id "P5G28RMWUN" \
+  --password "app-specific-password"
+
+# gh must be logged in (repo scope)
+gh auth status
+
+# Ship
+./scripts/release.sh --version 0.1.0
+```
+
+Options:
+
+| Flag | Meaning |
+|------|---------|
+| `--version 0.1.0` | Required. Tag becomes `v0.1.0`, asset `x68drv-0.1.0-macos.zip` |
+| `--draft` | Create a draft GitHub Release |
+| `--skip-notarize` | Sign + zip only (no Apple notarization) |
+| `--skip-github` | Stop after zip under `build/dist/` |
+
+Defaults on this machine (override with env / flags):
+
+- Identity: `Developer ID Application: Masanao Hayashi (P5G28RMWUN)`
+- Team: `P5G28RMWUN`
+- Notary profile: `x68drv-notary`
+- Repo: `masanaohayashi/x68drv`
+
+## Build (Release) only
 
 ```bash
 # From repo root
@@ -51,7 +85,7 @@ ls -la …/x68drv.app/Contents/Helpers/x68mount-helper
 
 ## Sign (inside-out)
 
-Prefer the helper script:
+Prefer the helper script (also called by `release.sh`):
 
 ```bash
 ./scripts/sign-and-notarize.sh \

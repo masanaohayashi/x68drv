@@ -24,3 +24,6 @@ DerivedData/
 *.dSYM.zip
 *.dSYM
 CONFIG.SYS
+
+# Release / local build products
+/build/
