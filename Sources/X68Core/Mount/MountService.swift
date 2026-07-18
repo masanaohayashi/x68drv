@@ -408,28 +408,77 @@ public final class MountService: @unchecked Sendable {
 
     /// Unmount + kill helper. Best-effort: never throws (callers already detached record).
     ///
-    /// Order matters for FUSE-T (NFS): **unmount first**, then stop helper. Killing the
-    /// helper while the NFS mount is busy often leaves a stuck volume that Finder
-    /// cannot eject.
+    /// After **writes**, Finder/NFS often keeps the volume "in use". Soft umount first
+    /// then hangs; for write mounts we **kill the helper first** so the NFS export
+    /// drops, then force-unmount. RO mounts still prefer soft umount first.
     private func tearDownDetached(record: MountRecord, process: Process?) {
         if record.backend == .fuse {
-            // 1) Ask the volume to go away (helper should exit when fuse_main returns).
-            unmountPath(record.mountURL)
-            // 2) Wait briefly for clean helper exit.
-            if let proc = process, proc.isRunning {
-                waitForProcessExit(proc, timeout: 1.0)
+            closeFinderWindows(for: record)
+
+            if record.experimentalWrite {
+                // Post-write: Finder holds handles → umount says "in use".
+                if let proc = process, proc.isRunning {
+                    terminateHelperProcess(proc)
+                }
+                // Give FUSE-T a beat to drop the NFS export.
+                Thread.sleep(forTimeInterval: 0.15)
+                unmountPath(record.mountURL)
+            } else {
+                unmountPath(record.mountURL)
+                if let proc = process, proc.isRunning {
+                    waitForProcessExit(proc, timeout: 1.0)
+                }
+                if let proc = process, proc.isRunning {
+                    terminateHelperProcess(proc)
+                }
+                unmountPath(record.mountURL)
             }
-            // 3) Force-kill leftover helper (and its process group if possible).
-            if let proc = process, proc.isRunning {
-                terminateHelperProcess(proc)
+
+            // Always ensure gone.
+            if isPathMounted(record.mountURL) {
+                if let proc = process, proc.isRunning {
+                    terminateHelperProcess(proc)
+                }
+                unmountPath(record.mountURL)
             }
-            // 4) Second unmount pass after helper death.
-            unmountPath(record.mountURL)
         } else if let proc = process, proc.isRunning {
             terminateHelperProcess(proc)
         }
 
         removeMountDirectory(record.mountURL)
+    }
+
+    /// Best-effort: close Finder windows looking at this mount so force-eject works.
+    private func closeFinderWindows(for record: MountRecord) {
+        let path = record.mountURL.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let name = record.displayName
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        // AppleScript: close windows whose POSIX path is under our mount.
+        let script = """
+        tell application "Finder"
+          try
+            repeat with w in (every Finder window)
+              try
+                set p to POSIX path of (target of w as alias)
+                if p starts with "\(path)" then close w
+              end try
+            end repeat
+          end try
+          try
+            if exists disk "\(name)" then
+              close every window of disk "\(name)"
+            end if
+          end try
+        end tell
+        """
+        runProcessWithTimeout(
+            executable: "/usr/bin/osascript",
+            arguments: ["-e", script],
+            timeout: 2.0
+        )
     }
 
     private func tearDownFiles(_ record: MountRecord, forceUnmount: Bool = false) {

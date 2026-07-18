@@ -178,6 +178,19 @@ func x68_swift_truncate(_ path: UnsafePointer<CChar>?, _ size: off_t) -> Int32 {
     FuseSession.shared.truncatePath(path, size: size)
 }
 
+@_cdecl("x68_swift_rename")
+func x68_swift_rename(
+    _ from: UnsafePointer<CChar>?,
+    _ to: UnsafePointer<CChar>?
+) -> Int32 {
+    FuseSession.shared.renamePath(from, to)
+}
+
+@_cdecl("x68_swift_flush")
+func x68_swift_flush(_ fh: UInt64) -> Int32 {
+    FuseSession.shared.flushFile(fh)
+}
+
 @_cdecl("x68_swift_statfs")
 func x68_swift_statfs(
     _ blockSize: UnsafeMutablePointer<UInt64>?,
@@ -241,7 +254,9 @@ final class FuseSession: @unchecked Sendable {
             x68_swift_create,
             x68_swift_unlink,
             x68_swift_mkdir,
-            x68_swift_truncate
+            x68_swift_truncate,
+            x68_swift_rename,
+            x68_swift_flush
         )
         x68_fuse_set_statfs_callback(x68_swift_statfs)
     }
@@ -486,22 +501,70 @@ final class FuseSession: @unchecked Sendable {
         return Int32(size)
     }
 
-    fileprivate func releaseFile(_ fh: UInt64) -> Int32 {
+    /// Persist dirty handle; leave it open (flush/fsync). Clears dirty on success.
+    fileprivate func flushFile(_ fh: UInt64) -> Int32 {
         lock.lock()
-        guard let handle = openFiles.removeValue(forKey: fh) else {
+        guard var handle = openFiles[fh] else {
             lock.unlock()
             return 0
         }
+        let dirty = handle.dirty
+        let path = handle.path
+        let data = handle.data
+        if dirty {
+            handle.dirty = false
+            openFiles[fh] = handle
+        }
         lock.unlock()
 
-        if handle.dirty, case .writable(let session) = backend {
-            do {
-                try session.writeFile(path: handle.path, contents: handle.data, overwrite: true)
-            } catch {
-                return mapError(error)
+        guard dirty, case .writable(let session) = backend else { return 0 }
+        do {
+            try session.writeFile(path: path, contents: data, overwrite: true)
+            return 0
+        } catch {
+            // Restore dirty so release can retry.
+            lock.lock()
+            if var h = openFiles[fh] {
+                h.dirty = true
+                openFiles[fh] = h
             }
+            lock.unlock()
+            return mapError(error)
         }
-        return 0
+    }
+
+    fileprivate func releaseFile(_ fh: UInt64) -> Int32 {
+        // Commit any remaining dirty bytes, then drop the handle.
+        let flushRC = flushFile(fh)
+        lock.lock()
+        openFiles.removeValue(forKey: fh)
+        lock.unlock()
+        return flushRC
+    }
+
+    fileprivate func renamePath(
+        _ cFrom: UnsafePointer<CChar>?,
+        _ cTo: UnsafePointer<CChar>?
+    ) -> Int32 {
+        guard let cFrom, let cTo else { return -EIO }
+        guard case .writable(let session) = backend else { return -EROFS }
+        let from = humanPath(from: String(cString: cFrom))
+        let to = humanPath(from: String(cString: cTo))
+
+        // Update open-handle paths so subsequent flush/release targets the new name.
+        lock.lock()
+        for (fh, var h) in openFiles where h.path == from {
+            h.path = to
+            openFiles[fh] = h
+        }
+        lock.unlock()
+
+        do {
+            try session.rename(from: from, to: to)
+            return 0
+        } catch {
+            return mapError(error)
+        }
     }
 
     fileprivate func createFile(

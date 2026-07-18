@@ -88,6 +88,21 @@ final class WritableHddSessionTests: XCTestCase {
         XCTAssertThrowsError(try WritableHddSession(imageData: xdf))
     }
 
+    func testRenameSameDirectory() throws {
+        let base = try SyntheticHDS.makeMinimal()
+        let session = try WritableHddSession(imageData: base)
+        try session.writeFile(path: HumanPath(display: "TEMP.BIN"), contents: Data("x".utf8))
+        try session.rename(
+            from: HumanPath(display: "TEMP.BIN"),
+            to: HumanPath(display: "FINAL.BIN")
+        )
+        let list = try session.listEntries()
+        XCTAssertFalse(list.contains(where: { $0.name.display.uppercased() == "TEMP.BIN" }))
+        XCTAssertTrue(list.contains(where: { $0.name.display.uppercased() == "FINAL.BIN" }))
+        XCTAssertEqual(try session.readFile(path: HumanPath(display: "FINAL.BIN")), Data("x".utf8))
+        XCTAssertTrue(try session.fsck().isClean)
+    }
+
     /// Finder copy-in needs non-zero free space via FAT free-cluster count.
     func testSpaceInfoReportsFreeClusters() throws {
         let base = try SyntheticHDS.makeMinimal()

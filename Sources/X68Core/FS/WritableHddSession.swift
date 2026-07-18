@@ -184,6 +184,19 @@ public final class WritableHddSession: @unchecked Sendable {
         return result
     }
 
+    /// Same-directory rename (Finder copy finalization).
+    public func rename(from: HumanPath, to: HumanPath) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let mutated = try HddInject.renameFile(
+            imageData: imageData,
+            partition: partition,
+            from: from,
+            to: to
+        )
+        try apply(mutated)
+    }
+
     /// Truncate existing file (or create empty if missing and size == 0).
     @discardableResult
     public func truncate(path: HumanPath, size: Int) throws -> HddInject.Result {

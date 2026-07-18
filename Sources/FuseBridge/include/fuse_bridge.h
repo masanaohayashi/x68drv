@@ -21,6 +21,9 @@ typedef int (*x68_create_fn)(const char *path, mode_t mode, uint64_t *out_fh);
 typedef int (*x68_unlink_fn)(const char *path);
 typedef int (*x68_mkdir_fn)(const char *path, mode_t mode);
 typedef int (*x68_truncate_fn)(const char *path, off_t size);
+typedef int (*x68_rename_fn)(const char *from, const char *to);
+/** Commit dirty open file (flush/fsync). Keep handle open. */
+typedef int (*x68_flush_fn)(uint64_t fh);
 /** Fills *block_size, *blocks, *bfree, *bavail (block counts). Return 0 or -errno. */
 typedef int (*x68_statfs_fn)(
     uint64_t *block_size,
@@ -47,7 +50,9 @@ void x68_fuse_set_write_callbacks(
     x68_create_fn create_fn,
     x68_unlink_fn unlink_fn,
     x68_mkdir_fn mkdir_fn,
-    x68_truncate_fn truncate_fn
+    x68_truncate_fn truncate_fn,
+    x68_rename_fn rename_fn,
+    x68_flush_fn flush_fn
 );
 
 /**

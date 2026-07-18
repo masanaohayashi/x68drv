@@ -261,6 +261,53 @@ public enum HddInject {
         return result
     }
 
+    // MARK: - Rename (same parent — Finder temp→final)
+
+    /// Rename a file within the same directory (no data/FAT move).
+    public static func renameFile(
+        imageData: Data,
+        partition: PartitionEntry,
+        from: HumanPath,
+        to: HumanPath
+    ) throws -> Data {
+        guard let fromLeaf = from.components.last, let toLeaf = to.components.last else {
+            throw X68Error.filesystem("Empty rename path")
+        }
+        let fromParent = HumanPath(components: Array(from.components.dropLast()))
+        let toParent = HumanPath(components: Array(to.components.dropLast()))
+        guard fromParent == toParent else {
+            throw X68Error.unsupported("Cross-directory rename not supported yet")
+        }
+        if namesEqual(fromLeaf, toLeaf) {
+            return imageData
+        }
+
+        var image = imageData
+        var ctx = try volumeContext(image: image, partition: partition)
+        let parent = try resolveDirectory(image: image, ctx: &ctx, path: fromParent)
+        let fromScan = try scanDirTable(image: image, ctx: ctx, table: parent, match: fromLeaf)
+        guard let source = fromScan.existingFile else {
+            if fromScan.existingDir != nil {
+                throw X68Error.unsupported("Directory rename not supported yet")
+            }
+            throw X68Error.filesystem("File not found: \(from.display)")
+        }
+        let toScan = try scanDirTable(image: image, ctx: ctx, table: parent, match: toLeaf)
+        if toScan.existingFile != nil || toScan.existingDir != nil {
+            throw X68Error.filesystem("Already exists: \(to.display)")
+        }
+
+        let entry = source.entry
+        let packed = try DirEntry.pack(
+            name: toLeaf,
+            attributes: entry.attributes,
+            firstCluster: entry.firstCluster,
+            size: entry.size
+        )
+        image.replaceSubrange(source.offset..<(source.offset + DirEntry.size), with: packed)
+        return image
+    }
+
     // MARK: - Mkdir
 
     /// Create a subdirectory under `parentPath` (empty path = root).

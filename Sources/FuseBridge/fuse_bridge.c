@@ -23,6 +23,8 @@ static x68_create_fn g_create;
 static x68_unlink_fn g_unlink;
 static x68_mkdir_fn g_mkdir;
 static x68_truncate_fn g_truncate;
+static x68_rename_fn g_rename;
+static x68_flush_fn g_flush;
 static x68_statfs_fn g_statfs;
 
 struct filler_pack {
@@ -49,13 +51,17 @@ void x68_fuse_set_write_callbacks(
     x68_create_fn create_fn,
     x68_unlink_fn unlink_fn,
     x68_mkdir_fn mkdir_fn,
-    x68_truncate_fn truncate_fn
+    x68_truncate_fn truncate_fn,
+    x68_rename_fn rename_fn,
+    x68_flush_fn flush_fn
 ) {
     g_write = write_fn;
     g_create = create_fn;
     g_unlink = unlink_fn;
     g_mkdir = mkdir_fn;
     g_truncate = truncate_fn;
+    g_rename = rename_fn;
+    g_flush = flush_fn;
 }
 
 void x68_fuse_set_statfs_callback(x68_statfs_fn statfs_fn) {
@@ -148,6 +154,24 @@ static int op_ftruncate(const char *path, off_t size, struct fuse_file_info *fi)
     return op_truncate(path, size);
 }
 
+static int op_rename(const char *from, const char *to) {
+    if (!g_rename) return -EROFS;
+    return g_rename(from, to);
+}
+
+static int op_flush(const char *path, struct fuse_file_info *fi) {
+    (void)path;
+    if (!g_flush) return 0;
+    return g_flush(fi->fh);
+}
+
+static int op_fsync(const char *path, int isdatasync, struct fuse_file_info *fi) {
+    (void)path;
+    (void)isdatasync;
+    if (!g_flush) return 0;
+    return g_flush(fi->fh);
+}
+
 static int op_statfs(const char *path, struct statvfs *stbuf) {
     (void)path;
     if (!g_statfs || !stbuf) return -EIO;
@@ -180,6 +204,9 @@ static struct fuse_operations x68_ops = {
     .mkdir = op_mkdir,
     .truncate = op_truncate,
     .ftruncate = op_ftruncate,
+    .rename = op_rename,
+    .flush = op_flush,
+    .fsync = op_fsync,
     .statfs = op_statfs,
 };
 
