@@ -9,6 +9,7 @@
 | [format-entry-points.md](format-entry-points.md) | XM6 / MPX68K における **HDF・HDS・XDF の入口関数マップ**（移植禁止・仕様抽出のみ） |
 | [disk-samples-verification.md](disk-samples-verification.md) | 手元 `disk/` サンプルの **実測突合結果**（サイズ・マジック・パーティション・BPB） |
 | [distribution.md](distribution.md) | **Hardened Runtime + 公証**（App Sandbox なし・直配布） |
+| [reference-difinder-write-path.md](reference-difinder-write-path.md) | **DiFinder / L3DiskEx 参照メモ**（書込パイプライン・SASI/SCSI。**移植禁止**） |
 
 ## 参照ソース（移植しない・**リポジトリ外**）
 

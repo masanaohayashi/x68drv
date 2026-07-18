@@ -661,7 +661,10 @@ $ x68mount --all game.hds /Volumes/x68
 
 > **【当面の実装方針（Rev.4 / ユーザー決定）】**  
 > **v0.1 および近接リリースでは書込パスを実装しない。** 提供するのはメニューバー UI・RO マウント（任意）・アプリ内ブラウザ / ホストへの書き出しのみ。  
-> 以下の write-back / コミット順序 / Phase 3 要件は **将来実装時に再設計しなくてよいよう残した仕様メモ**であり、0.1 の完了条件ではない。
+> 以下の write-back / コミット順序 / Phase 3 要件は **将来実装時に再設計しなくてよいよう残した仕様メモ**であり、0.1 の完了条件ではない。  
+>  
+> **既存実装の調査（移植禁止）:** ホスト側で Human68k 書込を行っている [DiFinder](https://github.com/bml3mk5/DiFinder) / [L3DiskEx](https://github.com/bml3mk5/L3DiskEx) の仕組みは  
+> [`reference-difinder-write-path.md`](reference-difinder-write-path.md) に整理した。delete 順序など **本節の規範と差がある箇所は本節を優先**する。
 
 **「journaling」という語は用いない。** 将来実装する際の実態は write-back キャッシュと **定義されたコミット順序** による best-effort 一貫性である。クラッシュ時の完全 ACID は保証しない。
 

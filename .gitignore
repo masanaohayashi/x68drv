@@ -27,3 +27,9 @@ CONFIG.SYS
 
 # Release / local build products
 /build/
+
+# Reference-only disk explorer (not part of this product)
+/L3DiskEx/
+
+# Reference-only HDD disk explorer (not part of this product)
+/DiFinder/
