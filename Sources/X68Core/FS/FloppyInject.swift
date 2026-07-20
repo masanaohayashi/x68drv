@@ -239,7 +239,9 @@ public enum FloppyInject {
             name: toLeaf,
             attributes: entry.attributes,
             firstCluster: entry.firstCluster,
-            size: entry.size
+            size: entry.size,
+            wtime: entry.wtime,
+            wdate: entry.wdate
         )
         image.replaceSubrange(source.offset..<(source.offset + DirEntry.size), with: packed)
         return image

@@ -176,9 +176,9 @@ cat >"$NOTES" <<EOF
 macOS menu-bar app to mount X68000 disk images (\`.xdf\` / \`.hds\` / \`.hdf\` / \`.dim\`) in Finder.
 
 ### Highlights
-- **Experimental write mount** (Settings, off by default) for HDS/HDF/XDF/DIM via FUSE-T
-- Creates \`.x68drv-bak\` on first change; eject from the **menu bar** after writing
-- Free-space reporting, Finder DnD permissions fix, more reliable eject
+- **Fix: file/folder dates no longer show as 1970-01-01** — MS-DOS \`wtime\`/\`wdate\` are parsed and exposed via FUSE \`stat\` and export
+- New files written via inject/mkdir get a real current DOS timestamp
+- Experimental write mount (Settings, off by default) for HDS/HDF/XDF/DIM via FUSE-T
 
 ### Download
 - **${ZIP_NAME}** — notarized \`.app\` (unzip and open)

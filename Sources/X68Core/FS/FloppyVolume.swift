@@ -65,6 +65,7 @@ public final class FloppyVolume: @unchecked Sendable {
         public var isDirectory: Bool
         public var size: UInt32
         public var firstCluster: UInt16
+        public var modificationDate: Date?
     }
 
     public func list(path: HumanPath = HumanPath()) throws -> [ListedEntry] {
@@ -76,7 +77,8 @@ public final class FloppyVolume: @unchecked Sendable {
                 name: e.name,
                 isDirectory: e.isDirectory,
                 size: e.size,
-                firstCluster: e.firstCluster
+                firstCluster: e.firstCluster,
+                modificationDate: e.modificationDate
             )
         }
     }
@@ -99,11 +101,30 @@ public final class FloppyVolume: @unchecked Sendable {
     public func export(path: HumanPath, to url: URL) throws {
         let data = try readFile(path: path)
         try data.write(to: url, options: .atomic)
+        if let date = try modificationDate(for: path) {
+            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+        }
+    }
+
+    private func modificationDate(for path: HumanPath) throws -> Date? {
+        guard let leaf = path.components.last else { return nil }
+        let parent = HumanPath(components: Array(path.components.dropLast()))
+        let entries = try directoryEntries(path: parent)
+        return entries.first(where: {
+            $0.isFile
+                && $0.name.stem.uppercased() == leaf.stem.uppercased()
+                && $0.name.ext.uppercased() == leaf.ext.uppercased()
+        })?.modificationDate
     }
 
     public func listEntries(path: HumanPath = HumanPath()) throws -> [VolumeEntry] {
         try list(path: path).map {
-            VolumeEntry(name: $0.name, isDirectory: $0.isDirectory, size: $0.size)
+            VolumeEntry(
+                name: $0.name,
+                isDirectory: $0.isDirectory,
+                size: $0.size,
+                modificationDate: $0.modificationDate
+            )
         }
     }
 

@@ -57,6 +57,9 @@ public enum SyntheticXDF {
         for i in 0..<8 { image[root + i] = dos8[i] }
         for i in 0..<3 { image[root + 8 + i] = ext3[i] }
         image[root + 11] = 0x20 // ATTR_ARCHIVE
+        // 1993-09-15 12:00:00 local (matches classic Human68k sample dates)
+        try Endian.writeUInt16LE(0x6000, to: &image, at: root + 22) // wtime
+        try Endian.writeUInt16LE(0x1B2F, to: &image, at: root + 24) // wdate
         // cluster LE at 26, size LE at 28
         try Endian.writeUInt16LE(2, to: &image, at: root + 26) // first cluster
         try Endian.writeUInt32LE(UInt32(contents.count), to: &image, at: root + 28)

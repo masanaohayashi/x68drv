@@ -329,7 +329,8 @@ final class FuseSession: @unchecked Sendable {
     private func fillStat(
         _ stbuf: UnsafeMutablePointer<stat>,
         isDir: Bool,
-        size: off_t
+        size: off_t,
+        mtimeSec: Int64? = nil
     ) {
         // Permissive modes: FUSE-T/NFS + Finder treat tight modes as "no access"
         // (grey icons / "読み出し権限がない").
@@ -348,6 +349,12 @@ final class FuseSession: @unchecked Sendable {
             stbuf.pointee.st_nlink = 1
             stbuf.pointee.st_size = size
             stbuf.pointee.st_blocks = (size + 511) / 512
+        }
+        if let mtimeSec, mtimeSec > 0 {
+            let t = time_t(mtimeSec)
+            stbuf.pointee.st_mtimespec.tv_sec = t
+            stbuf.pointee.st_atimespec.tv_sec = t
+            stbuf.pointee.st_ctimespec.tv_sec = t
         }
     }
 
@@ -381,10 +388,11 @@ final class FuseSession: @unchecked Sendable {
             }) else {
                 return -ENOENT
             }
+            let mtime = entry.modificationUnixSeconds
             if entry.isDirectory {
-                fillStat(stbuf, isDir: true, size: 0)
+                fillStat(stbuf, isDir: true, size: 0, mtimeSec: mtime)
             } else {
-                fillStat(stbuf, isDir: false, size: off_t(entry.size))
+                fillStat(stbuf, isDir: false, size: off_t(entry.size), mtimeSec: mtime)
             }
             return 0
         } catch {
@@ -412,6 +420,7 @@ final class FuseSession: @unchecked Sendable {
             for entry in entries {
                 let name = entry.name.display
                 seen.insert(name.uppercased())
+                let mtime = entry.modificationUnixSeconds ?? 0
                 name.withCString { cstr in
                     _ = x68_fuse_add_direntry_stat(
                         fillerCtx,
@@ -419,7 +428,8 @@ final class FuseSession: @unchecked Sendable {
                         entry.isDirectory ? 1 : 0,
                         UInt64(entry.size),
                         uid,
-                        gid
+                        gid,
+                        mtime
                     )
                 }
             }
@@ -434,7 +444,8 @@ final class FuseSession: @unchecked Sendable {
                         0,
                         UInt64(open.data.count),
                         uid,
-                        gid
+                        gid,
+                        0
                     )
                 }
             }

@@ -25,11 +25,22 @@ public enum SnapshotExporter {
                 try fileManager.createDirectory(at: dest, withIntermediateDirectories: true)
                 let child = HumanPath(components: path.components + [entry.name])
                 try exportDirectory(volume: volume, path: child, hostDir: dest, fileManager: fileManager)
+                try applyModificationDate(entry.modificationDate, to: dest, fileManager: fileManager)
             } else {
                 let data = try volume.readFile(path: HumanPath(components: path.components + [entry.name]))
                 try data.write(to: dest, options: .atomic)
+                try applyModificationDate(entry.modificationDate, to: dest, fileManager: fileManager)
             }
         }
+    }
+
+    private static func applyModificationDate(
+        _ date: Date?,
+        to url: URL,
+        fileManager: FileManager
+    ) throws {
+        guard let date else { return }
+        try fileManager.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
     }
 
     public static func sanitizeHostFileName(_ name: String) -> String {

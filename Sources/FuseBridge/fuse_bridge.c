@@ -70,7 +70,7 @@ void x68_fuse_set_statfs_callback(x68_statfs_fn statfs_fn) {
 }
 
 int x68_fuse_add_direntry(void *filler_ctx, const char *name) {
-    return x68_fuse_add_direntry_stat(filler_ctx, name, 0, 0, 0, 0);
+    return x68_fuse_add_direntry_stat(filler_ctx, name, 0, 0, 0, 0, 0);
 }
 
 int x68_fuse_add_direntry_stat(
@@ -79,7 +79,8 @@ int x68_fuse_add_direntry_stat(
     int is_dir,
     uint64_t size,
     uid_t uid,
-    gid_t gid
+    gid_t gid,
+    int64_t mtime_sec
 ) {
     struct filler_pack *p = (struct filler_pack *)filler_ctx;
     if (!p || !p->filler || !name) return -EINVAL;
@@ -97,6 +98,11 @@ int x68_fuse_add_direntry_stat(
     st.st_uid = uid ? uid : getuid();
     st.st_gid = gid ? gid : getgid();
     st.st_blksize = 1024;
+    if (mtime_sec > 0) {
+        st.st_mtimespec.tv_sec = (time_t)mtime_sec;
+        st.st_atimespec.tv_sec = (time_t)mtime_sec;
+        st.st_ctimespec.tv_sec = (time_t)mtime_sec;
+    }
     /* macFUSE/fuse-t high-level filler: (buf, name, stbuf, off) */
     return p->filler(p->buf, name, &st, 0);
 }

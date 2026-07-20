@@ -5,11 +5,25 @@ public struct VolumeEntry: Equatable, Sendable {
     public var name: HumanFileName
     public var isDirectory: Bool
     public var size: UInt32
+    /// Last-write time from the directory entry, if present and valid.
+    public var modificationDate: Date?
 
-    public init(name: HumanFileName, isDirectory: Bool, size: UInt32) {
+    public init(
+        name: HumanFileName,
+        isDirectory: Bool,
+        size: UInt32,
+        modificationDate: Date? = nil
+    ) {
         self.name = name
         self.isDirectory = isDirectory
         self.size = size
+        self.modificationDate = modificationDate
+    }
+
+    /// Unix epoch seconds for FUSE `stat`, or `nil` if unknown.
+    public var modificationUnixSeconds: Int64? {
+        guard let modificationDate else { return nil }
+        return Int64(modificationDate.timeIntervalSince1970.rounded())
     }
 }
 
