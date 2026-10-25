@@ -231,6 +231,37 @@ public enum HddInject {
         return (image, DeleteResult(remoteName: path.display, freedClusters: freed))
     }
 
+    /// Remove an empty subdirectory; never remove the root or dot entries.
+    public static func removeDirectory(
+        imageData: Data, partition: PartitionEntry, path: HumanPath
+    ) throws -> Data {
+        guard let leaf = path.components.last,
+              !path.components.contains(where: { $0.display == "." || $0.display == ".." }) else {
+            throw X68Error.filesystem("Refusing to remove root or dot directory")
+        }
+        var image = imageData
+        var ctx = try volumeContext(image: image, partition: partition)
+        let parent = try resolveDirectory(image: image, ctx: &ctx,
+            path: HumanPath(components: Array(path.components.dropLast())))
+        let scan = try scanDirTable(image: image, ctx: ctx, table: parent, match: leaf)
+        guard let target = scan.existingDir else {
+            throw X68Error.filesystem(scan.existingFile == nil ? "Directory not found" : "Not a directory")
+        }
+        guard target.entry.firstCluster >= 2 else {
+            throw X68Error.filesystem("Invalid directory cluster")
+        }
+        let entries = try HddVolume(imageData: image, partition: partition).listEntries(path: path)
+        guard entries.isEmpty else {
+            throw X68Error.filesystem("Directory not empty")
+        }
+        var fat = ctx.fat
+        let chain = try fat.chain(from: Int(target.entry.firstCluster))
+        image[target.offset] = 0xE5
+        try fat.freeChain(chain)
+        writeFAT(image: &image, ctx: ctx, fat: fat)
+        return image
+    }
+
     @discardableResult
     public static func deleteRootFileToURL(
         imageURL: URL,

@@ -175,14 +175,10 @@ public enum SyntheticHDS {
         guard let (name, contents) = file else { return }
 
         // Root entry
-        let stemSJIS = try EncodingCP932.encode(name.stem)
-        let (dos8, _) = try HumanNamePacking.splitStemSJIS(stemSJIS)
-        let (_, ext3) = try name.packDiskFields()
-        for i in 0..<8 { image[root + i] = dos8[i] }
-        for i in 0..<3 { image[root + 8 + i] = ext3[i] }
-        image[root + 11] = 0x20
-        try Endian.writeUInt16LE(2, to: &image, at: root + 26) // cluster LE
-        try Endian.writeUInt32LE(UInt32(contents.count), to: &image, at: root + 28)
+        let entry = try DirEntry.pack(
+            name: name, firstCluster: 2, size: UInt32(contents.count), wtime: 0, wdate: 0
+        )
+        image.replaceSubrange(root..<(root + DirEntry.size), with: entry)
 
         // Cluster 2 = EOF in both FATs
         setFAT16BE(&image, fatOffset: fat1, cluster: 2, value: 0xFFFF)

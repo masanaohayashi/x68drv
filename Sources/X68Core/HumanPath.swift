@@ -86,9 +86,9 @@ public struct HumanPath: Equatable, Sendable {
     }
 }
 
-/// SJIS-safe packing into classic 8.3 base field + remainder (Human68k style).
+/// Byte-preserving packing into classic 8.3 base field + remainder (Human68k style).
 ///
-/// The 8-byte DOS name field must not end on a Shift_JIS lead byte alone.
+/// The name fields together hold the CP932 byte sequence.
 public enum HumanNamePacking {
     /// Maximum SJIS bytes for the primary name (before extension), Human68k 18.3.
     public static let maxStemBytes = 18
@@ -96,7 +96,7 @@ public enum HumanNamePacking {
     public static let dosNameBytes = 8
 
     /// Split stem SJIS bytes into an 8-byte DOS field (space-padded) and optional remainder,
-    /// without splitting a double-byte character at the 8-byte boundary.
+    /// preserving all 18 bytes even when a double-byte character spans the boundary.
     public static func splitStemSJIS(_ stemSJIS: Data) throws -> (dos8: Data, rest: Data) {
         guard stemSJIS.count <= maxStemBytes else {
             throw X68Error.filesystem("Stem exceeds \(maxStemBytes) SJIS bytes")
@@ -107,31 +107,9 @@ public enum HumanNamePacking {
             return (dos, Data())
         }
 
-        // Prefer taking 8 bytes; if byte 7 is a lead, take only 7 and pad.
-        var take = dosNameBytes
-        if take > 0, EncodingCP932.isLeadByte(stemSJIS[take - 1]) {
-            // Would leave a lone lead in the 8-byte field — shorten.
-            take -= 1
-        }
-        // Also ensure we don't start the remainder mid-character (if take is lead of pair that continues).
-        // If take points into the middle of a DBCS, walk back.
-        var i = 0
-        while i < take {
-            if EncodingCP932.isLeadByte(stemSJIS[i]) {
-                if i + 1 >= take {
-                    take = i
-                    break
-                }
-                i += 2
-            } else {
-                i += 1
-            }
-        }
-
-        var dos = stemSJIS.prefix(take)
-        while dos.count < dosNameBytes { dos.append(0x20) }
-        let rest = stemSJIS.dropFirst(take)
-        return (Data(dos), Data(rest))
+        // Decode the two name fields together; a CP932 pair may span the boundary.
+        let take = dosNameBytes
+        return (Data(stemSJIS.prefix(take)), Data(stemSJIS.dropFirst(take)))
     }
 
     /// Pack a Unicode stem into 8.3-compatible dos8 + rest fields (CP932).

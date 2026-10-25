@@ -22,6 +22,8 @@ static x68_release_fn g_release;
 static x68_write_fn g_write;
 static x68_create_fn g_create;
 static x68_unlink_fn g_unlink;
+static x68_unlink_fn g_rmdir;
+
 static x68_mkdir_fn g_mkdir;
 static x68_truncate_fn g_truncate;
 static x68_rename_fn g_rename;
@@ -63,6 +65,10 @@ void x68_fuse_set_write_callbacks(
     g_truncate = truncate_fn;
     g_rename = rename_fn;
     g_flush = flush_fn;
+}
+
+void x68_fuse_set_rmdir_callback(x68_unlink_fn fn) {
+    g_rmdir = fn;
 }
 
 void x68_fuse_set_statfs_callback(x68_statfs_fn statfs_fn) {
@@ -197,6 +203,10 @@ static int op_unlink(const char *path) {
     return g_unlink(path);
 }
 
+static int op_rmdir(const char *path) {
+    return g_rmdir ? g_rmdir(path) : -EROFS;
+}
+
 static int op_mkdir(const char *path, mode_t mode) {
     if (!g_mkdir) return -EROFS;
     return g_mkdir(path, mode);
@@ -260,6 +270,7 @@ static struct fuse_operations x68_ops = {
     .write = op_write,
     .create = op_create,
     .unlink = op_unlink,
+    .rmdir = op_rmdir,
     .mkdir = op_mkdir,
     .truncate = op_truncate,
     .ftruncate = op_ftruncate,

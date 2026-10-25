@@ -27,44 +27,21 @@ final class HumanPathTests: XCTestCase {
         XCTAssertEqual(back.display, "テスト.DAT")
     }
 
-    /// U1.sjis_split — do not split DBCS at 8-byte boundary
-    func testSJISSafeSplitDoesNotCutLeadByte() throws {
-        // Build a stem whose SJIS length > 8 and where naive 8-cut would split a character.
-        // "あいいうえおか" etc. — each hiragana is typically 2 SJIS bytes.
-        let stem = "あいうえお" // 5 chars * 2 = 10 bytes typically
+    func testJapaneseStemFieldsRecombine() throws {
+        let stem = "あいうえお"
         let bytes = try EncodingCP932.encode(stem)
-        XCTAssertGreaterThan(bytes.count, 8)
-
         let (dos8, rest) = try HumanNamePacking.packStem(stem)
         XCTAssertEqual(dos8.count, 8)
-        // dos8 must not end with a lone lead byte
-        if let last = dos8.last(where: { $0 != 0x20 }) {
-            // If last non-space is a lead, the field would be invalid mid-character.
-            // After our packing, decoding dos8+rest should recover stem.
-            _ = last
-        }
-        var core = dos8
-        while core.last == 0x20 { core.removeLast() }
-        let full = core + rest
-        let decoded = try EncodingCP932.decode(full)
-        XCTAssertEqual(decoded, stem)
-        XCTAssertEqual(full, bytes)
+        XCTAssertEqual(dos8 + rest, bytes)
+        XCTAssertEqual(try EncodingCP932.decode(dos8 + rest), stem)
     }
 
-    func testSplitNeverLeavesLeadAsLastOfDos8() throws {
-        // Force a case: bytes where index 7 is lead if we took 8.
-        // Construct artificial SJIS: 7 single-byte + lead + trail + more
-        var synthetic = Data()
-        for _ in 0..<7 { synthetic.append(0x41) } // 'A'
-        synthetic.append(0x82) // lead
-        synthetic.append(0xA0) // trail
-        synthetic.append(0x42) // 'B'
-        let (dos8, rest) = try HumanNamePacking.splitStemSJIS(synthetic)
-        // dos8 should take 7 A's and pad; rest starts with lead+trail+B
+    func testSplitPreservesCharacterAcrossFields() throws {
+        let bytes = try EncodingCP932.encode("AAAAAAAあBBBBBBBBB")
+        XCTAssertEqual(bytes.count, 18)
+        let (dos8, rest) = try HumanNamePacking.splitStemSJIS(bytes)
         XCTAssertEqual(dos8.count, 8)
-        let core = dos8.filter { $0 != 0x20 }
-        XCTAssertEqual(core.count, 7)
-        XCTAssertFalse(EncodingCP932.isLeadByte(core.last!))
-        XCTAssertEqual(rest.first, 0x82)
+        XCTAssertEqual(rest.count, 10)
+        XCTAssertEqual(dos8 + rest, bytes)
     }
 }

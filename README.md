@@ -1,6 +1,6 @@
 # x68drv
 
-Mount X68000 emulator disk images (`.xdf` / `.hds` / `.hdf`) on macOS and open them in **Finder** (read-only for v0.1).
+Mount X68000 emulator disk images (`.xdf` / `.hds` / `.hdf`) on macOS and open them in **Finder** with optional experimental write support.
 
 Design and research notes live in [`docs/`](docs/README.md).
 
@@ -32,6 +32,7 @@ swift run x68drv-tool fsck path/to/disk.hds
 swift run x68drv-tool mkdir --write disk.hds SUB
 swift run x68drv-tool inject --write disk.hds ./local.bin SUB/HELLO.BIN
 swift run x68drv-tool delete --write disk.hds SUB/HELLO.BIN
+swift run x68drv-tool rmdir --write disk.hds SUB
 
 # Experimental FUSE write (HDS/HDF/XDF/DIM; creates .x68drv-bak, exclusive lock)
 swift run x68mount-helper copy-of-disk.hds /tmp/x68mnt --experimental-write
@@ -58,6 +59,17 @@ docs/                 # design, research, implementation plan
 |--------|----------|
 | **Installed** | Live RO FUSE volume via bundled `x68mount-helper` (Finder shows volume name = image file; mountpoint under `~/Library/Application Support/x68drv/Volumes/`) |
 | **Not installed** | Temporary **snapshot folder** under Application Support (still works for copy-out) |
+
+Enable **Settings → Experimental write mount**, then remount the image to write from Finder.
+SCSI `.hds` and SASI `.hdf` mounts support file creation, overwrite, deletion, directory
+creation, and empty-directory removal. Non-empty directories must have their contents removed first.
+The first change creates a `.x68drv-bak` backup next to the image. Without FUSE-T,
+snapshot folders support copy-out only.
+
+Human68k filenames support **18 CP932 bytes + a 3-byte extension** (21 single-byte
+characters excluding the dot). Japanese characters usually take two bytes. Long names
+are preserved when listing, reading, writing, renaming files, and deleting; names that
+exceed the fields are rejected rather than truncated.
 
 Xcode builds embed `x68mount-helper` into `x68drv.app/Contents/Helpers/`. FUSE-T is loaded at runtime from `/Library/Frameworks/fuse_t.framework`.
 

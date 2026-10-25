@@ -75,6 +75,13 @@ public enum WritableSession: @unchecked Sendable {
         }
     }
 
+    public func removeDirectory(path: HumanPath) throws {
+        switch self {
+        case .hdd(let s): try s.removeDirectory(path: path)
+        case .floppy: throw X68Error.unsupported("Directory removal unsupported for floppy images")
+        }
+    }
+
     public func truncate(path: HumanPath, size: Int) throws {
         switch self {
         case .hdd(let s): _ = try s.truncate(path: path, size: size)

@@ -56,7 +56,9 @@ public struct DirEntry: Equatable, Sendable {
         let cluster = try Endian.readUInt16LE(data, at: offset + 26)
         let fileSize = try Endian.readUInt32LE(data, at: offset + 28)
 
-        let stemRaw = stripPad(nameBytes)
+        let name2 = Data(data[(offset + 12)..<(offset + 22)]).prefix { $0 != 0 }
+        let continuation = stripPad(Data(name2))
+        let stemRaw = continuation.isEmpty ? stripPad(nameBytes) : nameBytes + continuation
         let extRaw = stripPad(extBytes)
         // First byte 0x05 means 0xE5 in Japanese short names (rare); treat as data.
         var stemData = stemRaw
@@ -69,7 +71,7 @@ public struct DirEntry: Equatable, Sendable {
         let ext = extRaw.isEmpty ? "" : EncodingCP932.decodeLossy(extRaw)
 
         return DirEntry(
-            name: HumanFileName(stem: stem.trimmingCharacters(in: .whitespaces), ext: ext.trimmingCharacters(in: .whitespaces)),
+            name: HumanFileName(stem: stem, ext: ext),
             attributes: attr,
             firstCluster: cluster,
             size: fileSize,
@@ -100,11 +102,14 @@ public struct DirEntry: Equatable, Sendable {
         let (dos8, rest) = try HumanNamePacking.splitStemSJIS(stemSJIS)
         let (_, ext3) = try name.packDiskFields()
         var name2 = rest
-        while name2.count < 10 { name2.append(0x20) }
-        if name2.count > 10 { name2 = name2.prefix(10) }
+        while name2.count < 10 { name2.append(0x00) }
+        guard name2.count <= 10 else {
+            throw X68Error.filesystem("Stem continuation exceeds 10 bytes")
+        }
 
         var out = Data(count: Self.size)
         for i in 0..<8 { out[i] = dos8[i] }
+        if out[0] == 0xE5 { out[0] = 0x05 }
         for i in 0..<3 { out[8 + i] = ext3[i] }
         out[11] = attributes
         for i in 0..<10 { out[12 + i] = name2[i] }

@@ -168,6 +168,11 @@ func x68_swift_unlink(_ path: UnsafePointer<CChar>?) -> Int32 {
     FuseSession.shared.unlinkPath(path)
 }
 
+@_cdecl("x68_swift_rmdir")
+func x68_swift_rmdir(_ path: UnsafePointer<CChar>?) -> Int32 {
+    FuseSession.shared.rmdirPath(path)
+}
+
 @_cdecl("x68_swift_mkdir")
 func x68_swift_mkdir(_ path: UnsafePointer<CChar>?, _ mode: mode_t) -> Int32 {
     FuseSession.shared.mkdirPath(path, mode: mode)
@@ -249,6 +254,7 @@ final class FuseSession: @unchecked Sendable {
             x68_swift_read,
             x68_swift_release
         )
+        x68_fuse_set_rmdir_callback(x68_swift_rmdir)
         x68_fuse_set_write_callbacks(
             x68_swift_write,
             x68_swift_create,
@@ -667,6 +673,15 @@ final class FuseSession: @unchecked Sendable {
         }
     }
 
+    fileprivate func rmdirPath(_ cPath: UnsafePointer<CChar>?) -> Int32 {
+        guard let cPath else { return -EIO }
+        guard case .writable(let session) = backend else { return -EROFS }
+        do {
+            try session.removeDirectory(path: humanPath(from: String(cString: cPath)))
+            return 0
+        } catch { return mapError(error) }
+    }
+
     fileprivate func mkdirPath(_ cPath: UnsafePointer<CChar>?, mode: mode_t) -> Int32 {
         _ = mode
         guard let cPath else { return -EIO }
@@ -712,6 +727,9 @@ final class FuseSession: @unchecked Sendable {
     private func mapError(_ error: Error) -> Int32 {
         let msg = (error as? X68Error).map(\.localizedDescription) ?? "\(error)"
         let lower = msg.lowercased()
+        if lower.contains("too long") || lower.contains("stem exceeds") { return -ENAMETOOLONG }
+        if lower.contains("not empty") { return -ENOTEMPTY }
+        if lower.contains("not a directory") { return -ENOTDIR }
         if lower.contains("not found") { return -ENOENT }
         if lower.contains("full") || lower.contains("limit") { return -ENOSPC }
         if lower.contains("exists") { return -EEXIST }

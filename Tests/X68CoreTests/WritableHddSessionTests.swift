@@ -2,6 +2,67 @@ import XCTest
 @testable import X68Core
 
 final class WritableHddSessionTests: XCTestCase {
+    func testLongNamesAndDirectoryRemovalPersist() throws {
+        let session = try WritableHddSession(imageData: SyntheticHDS.makeMinimal())
+        let directory = HumanPath(display: "ABCDEFGHIJKLMNOPQR")
+        let file = HumanPath(display: "ABCDEFGHIJKLMNOPQR/AAAAAAAあBBBBBBBBB.XYZ")
+        try session.mkdir(path: directory)
+        let payload = Data(repeating: 0x6A, count: 5000)
+        try session.writeFile(path: file, contents: payload)
+        XCTAssertEqual(try session.readFile(path: file), payload)
+        let before = session.imageData
+        XCTAssertThrowsError(try session.removeDirectory(path: directory))
+        XCTAssertEqual(session.imageData, before)
+        let reopened = try WritableHddSession(imageData: session.imageData)
+        XCTAssertEqual(try reopened.readFile(path: file), payload)
+        try reopened.writeFile(path: file, contents: Data([1, 2]))
+        XCTAssertEqual(try reopened.readFile(path: file), Data([1, 2]))
+        try reopened.deleteFile(path: file)
+        try reopened.removeDirectory(path: directory)
+        XCTAssertFalse(try reopened.listEntries().contains { $0.name.display == directory.display })
+        XCTAssertThrowsError(try reopened.removeDirectory(path: HumanPath()))
+        XCTAssertThrowsError(try reopened.removeDirectory(path: HumanPath(display: "..")))
+        XCTAssertTrue(try reopened.fsck().isClean)
+    }
+
+    func testLongNamesWithSamePrefixRemainDistinct() throws {
+        let session = try WritableHddSession(imageData: SyntheticHDS.makeMinimal())
+        let first = HumanPath(display: "ABCDEFGH1234567890.TXT")
+        let second = HumanPath(display: "ABCDEFGH0987654321.TXT")
+        try session.writeFile(path: first, contents: Data([1]))
+        try session.writeFile(path: second, contents: Data([2]))
+        XCTAssertEqual(try session.readFile(path: first), Data([1]))
+        XCTAssertEqual(try session.readFile(path: second), Data([2]))
+        try session.deleteFile(path: first)
+        XCTAssertEqual(try session.readFile(path: second), Data([2]))
+        let renamed = HumanPath(display: "LONGRENAMED1234567.TXT")
+        try session.rename(from: second, to: renamed)
+        let reopened = try WritableHddSession(imageData: session.imageData)
+        XCTAssertEqual(try reopened.readFile(path: renamed), Data([2]))
+        XCTAssertTrue(try reopened.fsck().isClean)
+    }
+
+    func testDirectoryRemovalFreesClustersAndPreservesOtherPartition() throws {
+        let original = try SyntheticHDS.makeDualPartition(
+            fileName: HumanFileName(display: "KEEP.TXT"), contents: Data([7])
+        )
+        let session = try WritableHddSession(imageData: original, partitionIndex: 1)
+        let free = try session.spaceInfo().freeBlocks
+        let parent = HumanPath(display: "PARENT123456789012")
+        let child = HumanPath(display: "PARENT123456789012/CHILD")
+        try session.mkdir(path: parent)
+        try session.mkdir(path: child)
+        XCTAssertThrowsError(try session.removeDirectory(path: parent))
+        try session.removeDirectory(path: child)
+        try session.removeDirectory(path: parent)
+        XCTAssertEqual(try session.spaceInfo().freeBlocks, free)
+        let parts = try HdsImage(data: original).partitions
+        let p0 = parts[0]
+        XCTAssertEqual(session.imageData.subdata(in: p0.bootOffset..<(p0.bootOffset + p0.byteLength)),
+                       original.subdata(in: p0.bootOffset..<(p0.bootOffset + p0.byteLength)))
+        XCTAssertTrue(try session.fsck().isClean)
+    }
+
     /// Stage D core: create → write → read → delete via session; fsck clean.
     func testCreateWriteDeleteRoundTrip() throws {
         let base = try SyntheticHDS.makeMinimal()

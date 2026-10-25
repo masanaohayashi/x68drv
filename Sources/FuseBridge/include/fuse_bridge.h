@@ -41,6 +41,9 @@ void x68_fuse_set_callbacks(
     x68_release_fn release_fn
 );
 
+/** Optional empty-directory removal. NULL → EROFS. */
+void x68_fuse_set_rmdir_callback(x68_unlink_fn rmdir_fn);
+
 /** Optional. Without it Finder often shows 0 free and refuses copy-in. */
 void x68_fuse_set_statfs_callback(x68_statfs_fn statfs_fn);
 

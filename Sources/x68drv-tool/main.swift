@@ -16,8 +16,8 @@ enum X68drvTool {
             try runInject(Array(args.dropFirst(2)))
             return
         }
-        if cmd == "delete" {
-            try runDelete(Array(args.dropFirst(2)))
+        if cmd == "delete" || cmd == "rmdir" {
+            try runDelete(Array(args.dropFirst(2)), directory: cmd == "rmdir")
             return
         }
         if cmd == "mkdir" {
@@ -148,7 +148,8 @@ enum X68drvTool {
     /// Stage B: experimental root-file delete on HDS/HDF.
     ///
     ///     x68drv-tool delete --write <image> <NAME.EXT> [partition]
-    private static func runDelete(_ args: [String]) throws {
+    private static func runDelete(_ args: [String], directory: Bool = false) throws {
+        let action = directory ? "rmdir" : "delete"
         var write = false
         var positional: [String] = []
         for a in args {
@@ -156,7 +157,7 @@ enum X68drvTool {
             case "--write": write = true
             default:
                 if a.hasPrefix("-") {
-                    fputs("unknown delete flag: \(a)\n", stderr)
+                    fputs("unknown \(action) flag: \(a)\n", stderr)
                     exit(2)
                 }
                 positional.append(a)
@@ -164,14 +165,14 @@ enum X68drvTool {
         }
         guard write else {
             fputs(
-                "delete refuses to run without --write (experimental; may destroy the image)\n",
+                "\(action) refuses to run without --write (experimental; may destroy the image)\n",
                 stderr
             )
             exit(2)
         }
         guard positional.count >= 2 else {
             fputs(
-                "usage: x68drv-tool delete --write <image> <NAME.EXT> [partition]\n",
+                "usage: x68drv-tool \(action) --write <image> <NAME.EXT> [partition]\n",
                 stderr
             )
             exit(2)
@@ -180,14 +181,22 @@ enum X68drvTool {
         let remote = HumanPath(display: positional[1])
         let part = positional.count >= 3 ? (Int(positional[2]) ?? 0) : 0
 
-        try requireClean(imageURL: imageURL, partition: part, action: "delete")
+        try requireClean(imageURL: imageURL, partition: part, action: action)
 
-        let result = try HddInject.deleteFileToURL(
-            imageURL: imageURL,
-            partitionIndex: part,
-            remotePath: remote
-        )
-        print("deleted \(result.remoteName) freedClusters=\(result.freedClusters)")
+        if directory {
+            let session = try WritableHddSession.open(
+                url: imageURL, partitionIndex: part, createBackup: false
+            )
+            try session.removeDirectory(path: remote)
+            print("removed directory \(remote.display)")
+        } else {
+            let result = try HddInject.deleteFileToURL(
+                imageURL: imageURL,
+                partitionIndex: part,
+                remotePath: remote
+            )
+            print("deleted \(result.remoteName) freedClusters=\(result.freedClusters)")
+        }
         try postflightFsck(imageURL: imageURL, partition: part)
     }
 
@@ -285,6 +294,7 @@ enum X68drvTool {
                 (experimental HDS/HDF; PATH may be NAME.EXT or DIR/NAME.EXT)
               x68drv-tool delete --write <image> <PATH> [partition]
               x68drv-tool mkdir --write <image> <DIR|PARENT/DIR> [partition]
+              x68drv-tool rmdir --write <image> <DIR|PARENT/DIR> [partition]
                 (copy the image first — no automatic backup)
 
             """,

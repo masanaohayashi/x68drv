@@ -184,6 +184,12 @@ public final class WritableHddSession: @unchecked Sendable {
         return result
     }
 
+    public func removeDirectory(path: HumanPath) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try apply(HddInject.removeDirectory(imageData: imageData, partition: partition, path: path))
+    }
+
     /// Same-directory rename (Finder copy finalization).
     public func rename(from: HumanPath, to: HumanPath) throws {
         lock.lock()
