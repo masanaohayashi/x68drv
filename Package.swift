@@ -39,7 +39,9 @@ let package = Package(
         .executableTarget(
             name: "x68mount-helper",
             dependencies: ["X68Core", "FuseBridge"],
-            path: "Sources/x68mount-helper"
+            path: "Sources/x68mount-helper",
+            // The universal (Xcode) SwiftPM backend needs this for @main in main.swift.
+            swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
         .testTarget(
             name: "X68CoreTests",

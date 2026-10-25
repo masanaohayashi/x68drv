@@ -37,8 +37,8 @@ xcrun notarytool store-credentials "x68drv-notary" \
 # gh must be logged in (repo scope)
 gh auth status
 
-# Ship
-./scripts/release.sh --version 0.1.0
+# Ship (this machine has the Notalization2021 profile)
+./scripts/release.sh --version 0.1.4 --notary-profile Notalization2021
 ```
 
 Options:
@@ -55,7 +55,7 @@ Defaults on this machine (override with env / flags):
 - Identity: `Developer ID Application: Masanao Hayashi (P5G28RMWUN)`
 - Team: `P5G28RMWUN`
 - Notary profile: `x68drv-notary`
-- Repo: `masanaohayashi/x68drv`
+- Repo: `masanaohayashi/ExtractMDF`
 
 ## Build (Release) only
 

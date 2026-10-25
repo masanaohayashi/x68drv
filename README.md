@@ -92,10 +92,10 @@ Install FUSE-T: https://www.fuse-t.org/
 
 ```bash
 # One-time notary profile + gh auth — see docs/distribution.md
-./scripts/release.sh --version 0.1.0
+./scripts/release.sh --version 0.1.4 --notary-profile Notalization2021
 ```
 
-That builds Release, signs with Hardened Runtime, notarizes, zips, and uploads to [GitHub Releases](https://github.com/masanaohayashi/x68drv/releases).
+That builds Release, signs with Hardened Runtime, notarizes, zips, and uploads to [GitHub Releases](https://github.com/masanaohayashi/ExtractMDF/releases).
 
 - Entitlements: `Apps/x68drv/x68drv.entitlements` (app), `x68mount-helper.entitlements` (helper)
 - Only special entitlement: `disable-library-validation` (load system FUSE-T framework)

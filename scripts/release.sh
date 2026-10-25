@@ -34,7 +34,7 @@ TEAM_ID="${DEVELOPMENT_TEAM:-P5G28RMWUN}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-x68drv-notary}"
 DERIVED="${ROOT}/build/ReleaseDerivedData"
 DIST="${ROOT}/build/dist"
-REPO="${GITHUB_REPOSITORY:-masanaohayashi/x68drv}"
+REPO="${GITHUB_REPOSITORY:-masanaohayashi/ExtractMDF}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -115,7 +115,8 @@ xcodebuild \
   CODE_SIGN_IDENTITY="$IDENTITY" \
   DEVELOPMENT_TEAM="$TEAM_ID" \
   MARKETING_VERSION="$VERSION" \
-  CURRENT_PROJECT_VERSION="$VERSION" \
+  ARCHS="arm64 x86_64" \
+  ONLY_ACTIVE_ARCH=NO \
   build
 
 APP="$DERIVED/Build/Products/Release/$APP_NAME"
@@ -151,11 +152,11 @@ rm -f "$ZIP_PATH"
 
 echo "==> Artifact check"
 ls -lh "$ZIP_PATH"
-unzip -l "$ZIP_PATH" | head -20
-codesign --verify --deep --strict --verbose=2 "$APP" || true
+unzip -l "$ZIP_PATH" | sed -n '1,20p'
+codesign --verify --deep --strict --verbose=2 "$APP"
 if [[ "$SKIP_NOTARIZE" -eq 0 ]]; then
-  spctl -a -vv "$APP" || true
-  xcrun stapler validate "$APP" || true
+  spctl -a -vv "$APP"
+  xcrun stapler validate "$APP"
 fi
 
 if [[ "$SKIP_GITHUB" -eq 1 ]]; then
@@ -176,9 +177,11 @@ cat >"$NOTES" <<EOF
 macOS menu-bar app to mount X68000 disk images (\`.xdf\` / \`.hds\` / \`.hdf\` / \`.dim\`) in Finder.
 
 ### Highlights
-- **Fix: file/folder dates no longer show as 1970-01-01** — MS-DOS \`wtime\`/\`wdate\` are parsed and exposed via FUSE \`stat\` and export
-- New files written via inject/mkdir get a real current DOS timestamp
-- Experimental write mount (Settings, off by default) for HDS/HDF/XDF/DIM via FUSE-T
+- SCSI HDS / SASI HDF: write files, create directories, delete files, and remove empty directories through FUSE-T
+- Human68k 18+3-byte filenames, including Japanese names across the on-disk field boundary
+- Empty-directory removal also available through \`x68drv-tool rmdir --write\`
+- Universal app and mount helper for Apple Silicon and Intel Macs
+- 84 core tests passed; SCSI write and persistence verified through a live FUSE mount
 
 ### Download
 - **${ZIP_NAME}** — notarized \`.app\` (unzip and open)

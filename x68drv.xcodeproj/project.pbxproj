@@ -125,7 +125,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\ncd \"${SRCROOT}\"\nCONFIG_FLAG=\"debug\"\nif [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  CONFIG_FLAG=\"release\"\nfi\n/usr/bin/xcrun --sdk macosx swift build --product x68mount-helper -c \"${CONFIG_FLAG}\"\nHELPER_SRC=\"\"\nfor cand in \\\n  \".build/${CONFIG_FLAG}/x68mount-helper\" \\\n  \".build/arm64-apple-macosx/${CONFIG_FLAG}/x68mount-helper\" \\\n  \".build/x86_64-apple-macosx/${CONFIG_FLAG}/x68mount-helper\"\ndo\n  if [ -x \"${cand}\" ]; then\n    HELPER_SRC=\"${cand}\"\n    break\n  fi\ndone\nif [ -z \"${HELPER_SRC}\" ]; then\n  echo \"error: x68mount-helper not found after swift build\" >&2\n  exit 1\nfi\nHELPER_DIR=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\nmkdir -p \"${HELPER_DIR}\"\ncp -f \"${HELPER_SRC}\" \"${HELPER_DIR}/x68mount-helper\"\nchmod +x \"${HELPER_DIR}/x68mount-helper\"\nENT=\"${SRCROOT}/Apps/x68drv/x68mount-helper.entitlements\"\n# Prefer the target's identity (Developer ID / Apple Development); fall back to ad-hoc for local Run.\nID=\"${EXPANDED_CODE_SIGN_IDENTITY:-}\"\nif [ -z \"${ID}\" ] || [ \"${ID}\" = \"-\" ]; then\n  ID=\"${CODE_SIGN_IDENTITY:-}\"\nfi\nif [ -n \"${ID}\" ] && [ \"${ID}\" != \"-\" ] && [ \"${ID}\" != \"Sign to Run Locally\" ]; then\n  codesign --force --options runtime --timestamp --entitlements \"${ENT}\" --sign \"${ID}\" \"${HELPER_DIR}/x68mount-helper\" || \\\n    codesign --force --options runtime --timestamp=none --entitlements \"${ENT}\" --sign \"${ID}\" \"${HELPER_DIR}/x68mount-helper\" || true\nelse\n  codesign --force --sign - --timestamp=none --entitlements \"${ENT}\" \"${HELPER_DIR}/x68mount-helper\" || true\nfi\necho \"Embedded ${HELPER_SRC} -> ${HELPER_DIR}/x68mount-helper (sign identity: ${ID:--})\"\n";
+			shellScript = "set -e\ncd \"${SRCROOT}\"\nCONFIG_FLAG=\"debug\"\nif [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  CONFIG_FLAG=\"release\"\nfi\nset --\nfor arch in ${ARCHS:-$(uname -m)}; do\n  set -- \"$@\" --arch \"$arch\"\ndone\n/usr/bin/xcrun --sdk macosx swift build --product x68mount-helper -c \"${CONFIG_FLAG}\" \"$@\"\nHELPER_BIN_DIR=\"$(/usr/bin/xcrun --sdk macosx swift build -c \"${CONFIG_FLAG}\" \"$@\" --show-bin-path)\"\nHELPER_SRC=\"${HELPER_BIN_DIR}/x68mount-helper\"\nif [ -z \"${HELPER_SRC}\" ]; then\n  echo \"error: x68mount-helper not found after swift build\" >&2\n  exit 1\nfi\nHELPER_DIR=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\nmkdir -p \"${HELPER_DIR}\"\ncp -f \"${HELPER_SRC}\" \"${HELPER_DIR}/x68mount-helper\"\nchmod +x \"${HELPER_DIR}/x68mount-helper\"\nENT=\"${SRCROOT}/Apps/x68drv/x68mount-helper.entitlements\"\n# Prefer the target's identity (Developer ID / Apple Development); fall back to ad-hoc for local Run.\nID=\"${EXPANDED_CODE_SIGN_IDENTITY:-}\"\nif [ -z \"${ID}\" ] || [ \"${ID}\" = \"-\" ]; then\n  ID=\"${CODE_SIGN_IDENTITY:-}\"\nfi\nif [ -n \"${ID}\" ] && [ \"${ID}\" != \"-\" ] && [ \"${ID}\" != \"Sign to Run Locally\" ]; then\n  codesign --force --options runtime --timestamp --entitlements \"${ENT}\" --sign \"${ID}\" \"${HELPER_DIR}/x68mount-helper\" || \\\n    codesign --force --options runtime --timestamp=none --entitlements \"${ENT}\" --sign \"${ID}\" \"${HELPER_DIR}/x68mount-helper\" || true\nelse\n  codesign --force --sign - --timestamp=none --entitlements \"${ENT}\" \"${HELPER_DIR}/x68mount-helper\" || true\nfi\necho \"Embedded ${HELPER_SRC} -> ${HELPER_DIR}/x68mount-helper (sign identity: ${ID:--})\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -231,7 +231,7 @@
 				CODE_SIGN_ENTITLEMENTS = Apps/x68drv/x68drv.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -240,7 +240,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.3;
+				MARKETING_VERSION = 0.1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "tokyo.studio-r.x68drv";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -255,7 +255,7 @@
 				CODE_SIGN_ENTITLEMENTS = Apps/x68drv/x68drv.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -264,7 +264,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.3;
+				MARKETING_VERSION = 0.1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "tokyo.studio-r.x68drv";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
