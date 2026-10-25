@@ -55,7 +55,7 @@ Defaults on this machine (override with env / flags):
 - Identity: `Developer ID Application: Masanao Hayashi (P5G28RMWUN)`
 - Team: `P5G28RMWUN`
 - Notary profile: `x68drv-notary`
-- Repo: `masanaohayashi/ExtractMDF`
+- Repo: `masanaohayashi/x68drv`
 
 ## Build (Release) only
 

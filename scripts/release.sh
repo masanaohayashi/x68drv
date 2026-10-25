@@ -34,7 +34,7 @@ TEAM_ID="${DEVELOPMENT_TEAM:-P5G28RMWUN}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-x68drv-notary}"
 DERIVED="${ROOT}/build/ReleaseDerivedData"
 DIST="${ROOT}/build/dist"
-REPO="${GITHUB_REPOSITORY:-masanaohayashi/ExtractMDF}"
+REPO="${GITHUB_REPOSITORY:-masanaohayashi/x68drv}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
